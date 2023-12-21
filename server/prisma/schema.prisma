@@ -1,0 +1,37 @@
+generator client {
+  provider = "cargo prisma"
+  output   = "../src/db.rs"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:database.db"
+}
+
+model User {
+  id              String    @id
+  password        String
+  display_name    String
+  profile_picture String?
+  online          Boolean   @default(false)
+  chats           Chat[]
+  messages        Message[]
+}
+
+model Chat {
+  id       String    @id @default(uuid())
+  members  User[]
+  messages Message[]
+}
+
+model Message {
+  id       String    @id @default(uuid())
+  chat     Chat      @relation(fields: [chat_id], references: [id])
+  chat_id  String
+  content  String
+  sender   User      @relation(fields: [user_id], references: [id])
+  user_id  String
+  reply_to Message?  @relation("replies", fields: [reply_id], references: [id])
+  reply_id String?
+  replies  Message[] @relation("replies")
+}
