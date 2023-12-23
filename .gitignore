@@ -2,3 +2,4 @@ target
 .env
 /server/prisma/database.db
 /server/prisma/database.db-journal
+/server/src/prisma.rs
