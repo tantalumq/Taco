@@ -1,6 +1,6 @@
 generator client {
   provider = "cargo prisma"
-  output   = "../src/db.rs"
+  output   = "../src/prisma.rs"
 }
 
 datasource db {
@@ -16,6 +16,7 @@ model User {
   online          Boolean   @default(false)
   chats           Chat[]
   messages        Message[]
+  sessions        Session[]
 }
 
 model Chat {
@@ -34,4 +35,11 @@ model Message {
   reply_to Message?  @relation("replies", fields: [reply_id], references: [id])
   reply_id String?
   replies  Message[] @relation("replies")
+}
+
+model Session {
+  id         String   @id @unique @default(uuid())
+  expires_at DateTime
+  user       User     @relation(fields: [user_id], references: [id])
+  user_id    String
 }
