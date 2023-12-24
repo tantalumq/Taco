@@ -53,7 +53,7 @@ async fn create_session(client: Arc<prisma::PrismaClient>, user_id: String) -> S
 }
 
 async fn register(
-    State(AppState { client }): State<AppState>,
+    State(AppState { client, .. }): State<AppState>,
     Json(info): Json<LoginInfo>,
 ) -> Json<Session> {
     client
@@ -75,8 +75,8 @@ async fn register(
     })
 }
 
-async fn login(
-    State(AppState { client }): State<AppState>,
+async fn log_in(
+    State(AppState { client, .. }): State<AppState>,
     Json(info): Json<LoginInfo>,
 ) -> Json<Option<Session>> {
     let user = client
@@ -143,7 +143,7 @@ impl FromRequestParts<AppState> for Session {
 
     async fn from_request_parts(
         req: &mut Parts,
-        AppState { client }: &AppState,
+        AppState { client, .. }: &AppState,
     ) -> Result<Self, Self::Rejection> {
         let authorization = req
             .headers
@@ -175,8 +175,18 @@ impl FromRequestParts<AppState> for Session {
     }
 }
 
+async fn log_out(State(AppState { client, .. }): State<AppState>, s: Session) {
+    client
+        .session()
+        .delete(prisma::session::UniqueWhereParam::IdEquals(s.session_id))
+        .exec()
+        .await
+        .unwrap();
+}
+
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
-        .route("/login", post(login))
+        .route("/log_in", post(log_in))
+        .route("/log_out", post(log_out))
         .route("/register", post(register))
 }
