@@ -6,15 +6,15 @@ use crate::{
     AppState, WsMessage,
 };
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
 
 use structs::requests::{
-    CreateChat, CreateMessage, DeleteMessage, GetChatMessages, LeaveChat, UpdateProfile, UserQuery,
-    WsChatMessage, WsCreateChat, WsDeleteMessage, WsLeaveChat,
+    CreateChat, CreateMessage, DeleteMessage, LeaveChat, UpdateProfile, UserStatus, WsChatMessage,
+    WsCreateChat, WsDeleteMessage, WsLeaveChat,
 };
 
 use crate::Session;
@@ -28,16 +28,22 @@ user::select!(user_status {
 
 async fn get_user_status(
     State(AppState { client, .. }): State<AppState>,
-    Query(UserQuery { id }): Query<UserQuery>,
-) -> Json<Option<user_status::Data>> {
+    Path(user_id): Path<String>,
+) -> Json<Option<UserStatus>> {
     Json(
         client
             .user()
-            .find_unique(user::UniqueWhereParam::IdEquals(id))
+            .find_unique(user::UniqueWhereParam::IdEquals(user_id))
             .select(user_status::select())
             .exec()
             .await
-            .unwrap(),
+            .unwrap()
+            .map(|status| UserStatus {
+                id: status.id,
+                display_name: status.display_name,
+                profile_picture: status.profile_picture,
+                online: status.online,
+            }),
     )
 }
 
@@ -140,12 +146,12 @@ async fn leave_chat(
 async fn get_messages(
     State(AppState { client, .. }): State<AppState>,
     session: Session,
-    Json(chat): Json<GetChatMessages>,
+    Path(chat_id): Path<String>,
 ) -> Result<Json<Vec<message::Data>>, (StatusCode, &'static str)> {
     let chat = client
         .chat()
         .find_first(vec![
-            chat::WhereParam::Id(StringFilter::Equals(chat.chat_id)),
+            chat::WhereParam::Id(StringFilter::Equals(chat_id)),
             chat::WhereParam::MembersSome(vec![user::WhereParam::Id(StringFilter::Equals(
                 session.user_id,
             ))]),
@@ -270,9 +276,9 @@ async fn update_profile(
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
-        .route("/status", get(get_user_status))
         .route("/chats", get(get_user_chats))
-        .route("/messages", get(get_messages))
+        .route("/status/:user_id", get(get_user_status))
+        .route("/messages/:chat_id", get(get_messages))
         .route("/update_profile", post(update_profile))
         .route("/create_message", post(create_message))
         .route("/create_chat", post(create_chat))

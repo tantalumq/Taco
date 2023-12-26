@@ -641,6 +641,11 @@ version = "0.1.0"
 dependencies = [
  "iced",
  "once_cell",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "structs",
+ "tokio",
 ]
 
 [[package]]
@@ -2202,6 +2207,7 @@ dependencies = [
  "futures",
  "iced_core",
  "log",
+ "tokio",
  "wasm-bindgen-futures",
  "wasm-timer",
 ]

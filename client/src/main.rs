@@ -1,70 +1,126 @@
 use std::collections::HashMap;
-use std::ops::Deref;
 
-use iced::widget;
-use iced::widget::text_input::Id;
-use iced::widget::{
-    button, checkbox, column, container, focus_next, row, scrollable, text, text_input,
+use iced::{
+    alignment,
+    widget::{button, column, container, focus_next, row, text, text_input},
+    Application, Command, Element, Length, Settings,
 };
-use iced::{alignment, Application, Color, Command, Element, Executor, Length, Sandbox, Settings};
+use reqwest::header::HeaderMap;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use structs::requests::{LoginInfo, Session, UserStatus};
 
-use once_cell::sync::Lazy;
+const SERVER_URL: &'static str = "http://localhost:3000";
 
-static UDML_SCROLLABLE_ID: Lazy<scrollable::Id> = Lazy::new(scrollable::Id::unique);
-static UM_SCROLLABLE_ID: Lazy<scrollable::Id> = Lazy::new(scrollable::Id::unique);
-
-static GRL_TEXT_INPUT_ID: Lazy<text_input::Id> = Lazy::new(text_input::Id::unique);
-static GRP_TEXT_INPUT_ID: Lazy<text_input::Id> = Lazy::new(text_input::Id::unique);
-static GRN_TEXT_INPUT_ID: Lazy<text_input::Id> = Lazy::new(text_input::Id::unique);
-static GRFN_TEXT_INPUT_ID: Lazy<text_input::Id> = Lazy::new(text_input::Id::unique);
-static GRD_TEXT_INPUT_ID: Lazy<text_input::Id> = Lazy::new(text_input::Id::unique);
-
-static GLL_TEXT_INPUT_ID: Lazy<text_input::Id> = Lazy::new(text_input::Id::unique);
-static GLP_TEXT_INPUT_ID: Lazy<text_input::Id> = Lazy::new(text_input::Id::unique);
-
-static AUM_TEXT_INPUT_ID: Lazy<text_input::Id> = Lazy::new(text_input::Id::unique);
-
-mod db;
-mod structs;
-use db::{new_client, PrismaClient};
-
-use structs::*;
+mod components;
 
 #[tokio::main]
 pub async fn main() -> iced::Result {
+    let client = reqwest::Client::new();
     Taco::run(Settings {
         window: iced::window::Settings {
             min_size: Some((600, 500)),
             position: iced::window::Position::Default,
             transparent: true,
             icon: None,
-            resizable: false,
             ..Default::default()
         },
-        ..Settings::with_flags(new_client().await.unwrap())
+        ..Settings::with_flags(client)
     })
 }
 
 struct Taco {
-    user_status: UserStatus,
-    client: PrismaClient,
+    state: AppState,
+    client: reqwest::Client,
+    profile_picture_cache: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone)]
+enum AppState {
+    LoggedIn {
+        session: Session,
+    },
+    Guest {
+        username_input: String,
+        password_input: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
 enum AppMessage {
-    LoginInputChanged(String),
-    NicknameInputChanged(String),
-    FullNameCheckBoxChanged(bool),
-    FullNameInputChanged(String),
-    DescriptCheckBoxChanged(bool),
-    DescriptionInputChanged(String),
+    UsernameInputChanged(String),
     PasswordInputChanged(String),
-    ContinueButtonPressed,
-    ChangeFocus,
-    DirectMessage((usize, AppDirectMessage)),
-    UserMessage,
-    UserMessageInputChanged(String),
-    UserMessageSubmit(u64),
+    Login,
+    Register,
+    LoggedIn(Session),
+    FocusChange,
+}
+
+#[derive(Debug)]
+enum ServerRequestError {
+    ReqwestError(reqwest::Error),
+    InvalidDataError(serde_json::Error),
+    InvalidResponseError(serde_json::Error),
+}
+
+async fn server_post<T: DeserializeOwned>(
+    client: reqwest::Client,
+    route: &'static str,
+    data: impl Serialize,
+) -> Result<T, ServerRequestError> {
+    let mut headers = HeaderMap::new();
+    headers.insert("Content-Type", "application/json".parse().unwrap());
+
+    let response = client
+        .post(&format!("{SERVER_URL}/{route}"))
+        .headers(headers)
+        .body(
+            serde_json::to_value(data)
+                .map_err(ServerRequestError::InvalidResponseError)?
+                .to_string(),
+        )
+        .send()
+        .await
+        .map_err(ServerRequestError::ReqwestError)?;
+    let response_data = response
+        .text()
+        .await
+        .map_err(ServerRequestError::ReqwestError)?;
+    let response_value =
+        serde_json::from_str(&response_data).map_err(ServerRequestError::InvalidDataError)?;
+    Ok(response_value)
+}
+
+async fn server_get<T: DeserializeOwned>(
+    client: reqwest::Client,
+    route: &str,
+) -> Result<T, ServerRequestError> {
+    let response = client
+        .get(&format!("{SERVER_URL}/{route}"))
+        .send()
+        .await
+        .map_err(ServerRequestError::ReqwestError)?;
+    let response_data = response
+        .text()
+        .await
+        .map_err(ServerRequestError::ReqwestError)?;
+    let response_value =
+        serde_json::from_str(&response_data).map_err(ServerRequestError::InvalidDataError)?;
+    Ok(response_value)
+}
+
+impl Taco {
+    async fn get_profile_picture(&mut self, user: String) -> Option<String> {
+        match self.profile_picture_cache.get(&user) {
+            Some(pfp) => Some(pfp.clone()),
+            None => {
+                let pfp = server_get::<UserStatus>(self.client.clone(), &format!("status/{user}"))
+                    .await
+                    .ok()
+                    .and_then(|status| status.profile_picture)?;
+                self.profile_picture_cache.insert(user, pfp.clone());
+                Some(pfp)
+            }
+        }
+    }
 }
 
 impl Application for Taco {
@@ -74,13 +130,17 @@ impl Application for Taco {
 
     type Theme = iced::theme::Theme;
 
-    type Flags = PrismaClient;
+    type Flags = reqwest::Client;
 
-    fn new(flags: PrismaClient) -> (Self, Command<AppMessage>) {
+    fn new(client: reqwest::Client) -> (Self, Command<AppMessage>) {
         (
             Taco {
-                user_status: User::current_user_load(),
-                client: flags,
+                state: AppState::Guest {
+                    username_input: String::new(),
+                    password_input: String::new(),
+                },
+                client,
+                profile_picture_cache: HashMap::new(),
             },
             Command::none(),
         )
@@ -91,84 +151,40 @@ impl Application for Taco {
     }
 
     fn update(&mut self, message: AppMessage) -> Command<AppMessage> {
-        match &mut self.user_status {
-            UserStatus::ActiveUser(user) => match message {
-                AppMessage::ChangeFocus => focus_next::<AppMessage>(),
-                AppMessage::DirectMessage((i, dm_message)) => {
-                    if let Some(dm) = user.get_mut().7.get_mut(i) {
-                        dm.update(dm_message);
-
-                        Command::none()
-                    } else {
-                        Command::none()
-                    }
-                }
-                AppMessage::UserMessage => Command::none(),
-                AppMessage::UserMessageInputChanged(value) => {
-                    user.message_input = value;
-
-                    Command::none()
-                }
-                AppMessage::UserMessageSubmit(target_direct_id) => Command::none(),
+        match self.state {
+            AppState::LoggedIn { ref session } => match message {
                 _ => Command::none(),
             },
-            UserStatus::Guest(guest) => match message {
-                AppMessage::ContinueButtonPressed => {
-                    /* MAKE A REGISTER SYSTEM */
-                    if guest.page != GuestPage::Login {
-                        self.user_status = UserStatus::ActiveUser(User::new(
-                            guest.input.ninput.to_owned(),
-                            if guest.input.fncheck {
-                                Some(guest.input.fninput.to_owned())
-                            } else {
-                                None
-                            },
-                            if guest.input.dcheck {
-                                Some(guest.input.dinput.to_owned())
-                            } else {
-                                None
-                            },
-                            None,
-                        ))
-                    } else {
-                        //UserStatus::ActiveUser(User::TODO)
-                    }
-
+            AppState::Guest {
+                ref mut username_input,
+                ref mut password_input,
+            } => match message {
+                AppMessage::UsernameInputChanged(value) => {
+                    *username_input = value;
                     Command::none()
                 }
-                AppMessage::LoginInputChanged(input) => {
-                    guest.input.linput = input;
-
+                AppMessage::PasswordInputChanged(value) => {
+                    *password_input = value;
                     Command::none()
                 }
-                AppMessage::NicknameInputChanged(input) => {
-                    guest.input.ninput = input;
-
-                    Command::none()
-                }
-                AppMessage::FullNameCheckBoxChanged(value) => {
-                    guest.input.fncheck = value;
-                    Command::none()
-                }
-                AppMessage::FullNameInputChanged(input) => {
-                    guest.input.fninput = input;
-
-                    Command::none()
-                }
-                AppMessage::DescriptionInputChanged(input) => {
-                    guest.input.dinput = input;
-
-                    Command::none()
-                }
-                AppMessage::PasswordInputChanged(input) => {
-                    guest.input.pinput = input;
-
-                    Command::none()
-                }
-                AppMessage::ChangeFocus => focus_next::<AppMessage>(),
-                AppMessage::DescriptCheckBoxChanged(value) => {
-                    guest.input.dcheck = value;
-
+                AppMessage::FocusChange => focus_next(),
+                AppMessage::Register | AppMessage::Login => Command::perform(
+                    server_post::<Session>(
+                        self.client.clone(),
+                        if message == AppMessage::Login {
+                            "login"
+                        } else {
+                            "register"
+                        },
+                        LoginInfo {
+                            username: username_input.clone(),
+                            password: password_input.clone(),
+                        },
+                    ),
+                    move |register_result| AppMessage::LoggedIn(register_result.unwrap()),
+                ),
+                AppMessage::LoggedIn(session) => {
+                    self.state = AppState::LoggedIn { session };
                     Command::none()
                 }
                 _ => Command::none(),
@@ -177,238 +193,57 @@ impl Application for Taco {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        match &self.user_status {
-            UserStatus::ActiveUser(user) => {
-                /* MAKE A TACO */
-                let direct_messages = container(
-                    scrollable(column(
-                        user.get()
-                            .7
-                            .iter()
-                            .enumerate()
-                            .map(|(i, dm)| {
-                                dm.view(i)
-                                    .map(move |message| AppMessage::DirectMessage((i, message)))
-                            })
-                            .collect(),
-                    ))
-                    .id(UDML_SCROLLABLE_ID.clone())
-                    .width(500),
-                )
-                .align_x(alignment::Horizontal::Left);
-                let mut um: Option<&Vec<UserMessage>> = None;
-                let mut opened_direct: Option<&DirectMessage> = None;
-                for dm in user.get().7 {
-                    if dm.is_opened {
-                        um = Some(&dm.messages);
-                        opened_direct = Some(dm);
-                    }
-                }
-                let user_messages = match um {
-                    Some(message) => container(
-                        scrollable(column(
-                            message
-                                .iter()
-                                .enumerate()
-                                .map(|(i, m)| m.view(i).map(|_| AppMessage::UserMessage))
-                                .collect(),
-                        ))
-                        .id(UM_SCROLLABLE_ID.clone()),
-                    )
-                    .align_x(alignment::Horizontal::Center)
-                    .width(Length::Fill)
-                    .max_width(500),
-                    None => container(
-                        scrollable(text("Nothing. Выбери one Pablose"))
-                            .id(UM_SCROLLABLE_ID.clone()),
-                    )
-                    .align_x(alignment::Horizontal::Center)
-                    .width(Length::Fill)
-                    .max_width(500),
+        match self.state {
+            AppState::LoggedIn { ref session } => {
+                let username = &session.user_id;
+                text(format!("Welcome, {username}!")).into()
+            }
+            AppState::Guest {
+                ref username_input,
+                ref password_input,
+            } => {
+                let sign_up_text = text("Sign Up").size(36);
+                let username_text_input = text_input("Username", username_input)
+                    .on_input(AppMessage::UsernameInputChanged)
+                    .on_submit(AppMessage::FocusChange)
+                    .padding(10);
+                let password_text_input = text_input("Password", password_input)
+                    .on_input(AppMessage::PasswordInputChanged)
+                    .on_submit(AppMessage::FocusChange)
+                    .password()
+                    .padding(10);
+
+                let center_button = |content| {
+                    button(text(content).horizontal_alignment(alignment::Horizontal::Center))
+                        .width(Length::Fill)
+                        .padding(10)
                 };
-                let message_input = container(
-                    text_input("Type message!", &user.message_input)
-                        .id(AUM_TEXT_INPUT_ID.clone())
-                        .on_input(AppMessage::UserMessageInputChanged)
-                        .on_submit(AppMessage::UserMessageSubmit(match opened_direct {
-                            Some(dm) => dm.id,
-                            None => 0,
-                        }))
-                        .size(20),
+
+                let button_row = row![
+                    center_button("Log in").on_press(AppMessage::Login),
+                    center_button("Register").on_press(AppMessage::Register),
+                ]
+                .spacing(10);
+                container(
+                    column![
+                        sign_up_text,
+                        username_text_input,
+                        password_text_input,
+                        button_row
+                    ]
+                    .spacing(10)
+                    .width(Length::Fixed(250.))
+                    .align_items(iced::Alignment::Center),
                 )
-                .align_y(alignment::Vertical::Bottom)
-                .align_x(alignment::Horizontal::Center)
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .padding(15)
-                .max_width(500);
-                let content =
-                    row![direct_messages, column![user_messages, message_input]].spacing(10);
-                container(content).into()
-            }
-            UserStatus::Guest(guest) => {
-                /* MAKE A REGISTER|LOGIN WINDOW */
-                match guest.page {
-                    GuestPage::Register => {
-                        let title = text("Registration")
-                            .size(50)
-                            .style(Color::from([0.5, 0.5, 0.5]))
-                            .width(Length::Fill)
-                            .horizontal_alignment(alignment::Horizontal::Center);
-                        let login_input = container(
-                            text_input("Login", &guest.input.linput)
-                                .id(GRL_TEXT_INPUT_ID.clone())
-                                .padding(15)
-                                .size(15)
-                                .width(350)
-                                .on_input(AppMessage::LoginInputChanged)
-                                .on_submit(AppMessage::ChangeFocus),
-                        )
-                        .width(Length::Fill)
-                        .align_x(alignment::Horizontal::Center);
-                        let nickname_input = container(
-                            text_input("Nickname", &guest.input.ninput)
-                                .id(GRN_TEXT_INPUT_ID.clone())
-                                .padding(15)
-                                .size(15)
-                                .width(350)
-                                .on_input(AppMessage::NicknameInputChanged)
-                                .on_submit(AppMessage::ChangeFocus),
-                        )
-                        .width(Length::Fill)
-                        .align_x(alignment::Horizontal::Center);
-                        let full_name_checkbox = container(checkbox(
-                            "Full Name",
-                            guest.input.fncheck,
-                            AppMessage::FullNameCheckBoxChanged,
-                        ))
-                        .width(Length::Fill)
-                        .align_x(alignment::Horizontal::Center);
-                        let description_checkbox = container(checkbox(
-                            "Profile description",
-                            guest.input.dcheck,
-                            AppMessage::DescriptCheckBoxChanged,
-                        ))
-                        .width(Length::Fill)
-                        .align_x(alignment::Horizontal::Center);
-                        let full_name_input = container(
-                            text_input("Full name", &guest.input.fninput)
-                                .id(GRFN_TEXT_INPUT_ID.clone())
-                                .padding(15)
-                                .size(15)
-                                .width(350)
-                                .on_input(AppMessage::FullNameInputChanged)
-                                .on_submit(AppMessage::ChangeFocus),
-                        )
-                        .width(Length::Fill)
-                        .center_x()
-                        .align_x(alignment::Horizontal::Center);
-                        let description_input = container(
-                            text_input("Profile description", &guest.input.dinput)
-                                .id(GRD_TEXT_INPUT_ID.clone())
-                                .padding(15)
-                                .size(15)
-                                .width(350)
-                                .on_input(AppMessage::DescriptionInputChanged)
-                                .on_submit(AppMessage::ChangeFocus),
-                        )
-                        .width(Length::Fill)
-                        .center_x()
-                        .align_x(alignment::Horizontal::Center);
-                        let password_input = container(
-                            text_input("Password", &guest.input.pinput)
-                                .id(GRP_TEXT_INPUT_ID.clone())
-                                .padding(15)
-                                .size(15)
-                                .width(350)
-                                .on_input(AppMessage::PasswordInputChanged)
-                                .password()
-                                .on_submit(AppMessage::ChangeFocus),
-                        )
-                        .width(Length::Fill)
-                        .align_x(alignment::Horizontal::Center);
-                        let continue_button = container(
-                            button("Continue")
-                                .width(85)
-                                .height(35)
-                                .padding([5, 10])
-                                .on_press(AppMessage::ContinueButtonPressed),
-                        )
-                        .width(Length::Fill)
-                        .align_x(alignment::Horizontal::Center);
-                        let row = match (guest.input.fncheck, guest.input.dcheck) {
-                            (true, true) => row![full_name_input, description_input],
-                            (true, false) => row![full_name_input],
-                            (false, true) => row![description_input],
-                            (false, false) => row![],
-                        };
-                        let content = column![
-                            title,
-                            login_input,
-                            nickname_input,
-                            row![full_name_checkbox, description_checkbox],
-                            row,
-                            password_input,
-                            continue_button,
-                        ]
-                        .spacing(20)
-                        .max_width(800);
-                        container(content)
-                            .width(Length::Fill)
-                            .padding(40)
-                            .center_x()
-                            .into()
-                    }
-                    GuestPage::Login => {
-                        let title = text("Login")
-                            .size(50)
-                            .style(Color::from([0.5, 0.5, 0.5]))
-                            .width(Length::Fill)
-                            .horizontal_alignment(alignment::Horizontal::Center);
-                        let login_input = container(
-                            text_input("Login", &guest.input.linput)
-                                .id(GLL_TEXT_INPUT_ID.clone())
-                                .padding(15)
-                                .size(15)
-                                .width(350)
-                                .on_input(AppMessage::LoginInputChanged)
-                                .on_submit(AppMessage::ChangeFocus),
-                        )
-                        .width(Length::Fill)
-                        .align_x(alignment::Horizontal::Center);
-                        let password_input = container(
-                            text_input("Password", &guest.input.pinput)
-                                .id(GLP_TEXT_INPUT_ID.clone())
-                                .padding(15)
-                                .size(15)
-                                .width(350)
-                                .on_input(AppMessage::PasswordInputChanged)
-                                .password()
-                                .on_submit(AppMessage::ChangeFocus),
-                        )
-                        .width(Length::Fill)
-                        .align_x(alignment::Horizontal::Center);
-                        let continue_button = container(
-                            button("Continue")
-                                .width(85)
-                                .height(35)
-                                .padding([5, 10])
-                                .on_press(AppMessage::ContinueButtonPressed),
-                        )
-                        .width(Length::Fill)
-                        .align_x(alignment::Horizontal::Center);
-                        let content = column![title, login_input, password_input, continue_button]
-                            .spacing(20)
-                            .max_width(800);
-                        container(content)
-                            .width(Length::Fill)
-                            .padding(40)
-                            .center_x()
-                            .into()
-                    }
-                }
+                .center_x()
+                .center_y()
+                .into()
             }
         }
+
+        //container(content).into()
     }
 
     fn theme(&self) -> Self::Theme {

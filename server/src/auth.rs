@@ -8,6 +8,7 @@ use axum::{
     Json, Router,
 };
 use chrono::{DateTime, Duration, FixedOffset, Utc};
+use prisma_client_rust::{prisma_errors::query_engine::UniqueKeyViolation, QueryError};
 use serde::Serialize;
 use structs::requests::LoginInfo;
 
@@ -55,7 +56,13 @@ async fn create_session(client: Arc<prisma::PrismaClient>, user_id: String) -> S
 async fn register(
     State(AppState { client, .. }): State<AppState>,
     Json(info): Json<LoginInfo>,
-) -> Json<Session> {
+) -> Result<Json<Session>, (StatusCode, String)> {
+    const MAX_USERNAME_LENGTH: usize = 20;
+
+    if info.username.len() > MAX_USERNAME_LENGTH {
+        return Err((StatusCode::BAD_REQUEST, "Username too long!".into()));
+    }
+
     client
         .user()
         .create(
@@ -66,13 +73,21 @@ async fn register(
         )
         .exec()
         .await
-        .unwrap();
+        .map_err(|err| match err {
+            err if err.is_prisma_error::<UniqueKeyViolation>() => {
+                (StatusCode::CONFLICT, "Name was already taken".into())
+            }
+            err => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Prisma error: {err}"),
+            ),
+        })?;
 
     let session_id = create_session(client, info.username.clone()).await;
-    Json(Session {
+    Ok(Json(Session {
         user_id: info.username,
         session_id,
-    })
+    }))
 }
 
 async fn log_in(
