@@ -1,13 +1,15 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
+use components::{Chat, ChatList, ChatMessage};
 use iced::{
     alignment,
-    widget::{button, column, container, focus_next, row, text, text_input},
+    widget::{button, column, container, focus_next, row, scrollable, text, text_input},
     Application, Command, Element, Length, Settings,
 };
 use reqwest::header::HeaderMap;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use structs::requests::{LoginInfo, Session, UserStatus};
+use structs::requests::{ChatWithMembers, LoginInfo, Session, UserStatus};
+use tokio::sync::Mutex;
 
 const SERVER_URL: &'static str = "http://localhost:3000";
 
@@ -31,12 +33,12 @@ pub async fn main() -> iced::Result {
 struct Taco {
     state: AppState,
     client: reqwest::Client,
-    profile_picture_cache: HashMap<String, String>,
 }
 
 enum AppState {
     LoggedIn {
         session: Session,
+        chat_list: Arc<Mutex<ChatList>>,
     },
     Guest {
         username_input: String,
@@ -52,6 +54,8 @@ enum AppMessage {
     Register,
     LoggedIn(Session),
     FocusChange,
+    ChatsLoaded(Vec<ChatWithMembers>),
+    ChatMessage(ChatMessage, String),
 }
 
 #[derive(Debug)]
@@ -65,9 +69,17 @@ async fn server_post<T: DeserializeOwned>(
     client: reqwest::Client,
     route: &'static str,
     data: impl Serialize,
+    session: Option<String>,
 ) -> Result<T, ServerRequestError> {
     let mut headers = HeaderMap::new();
     headers.insert("Content-Type", "application/json".parse().unwrap());
+
+    if let Some(session) = session {
+        headers.insert(
+            "Authorization",
+            format!("Bearer {session}").parse().unwrap(),
+        );
+    }
 
     let response = client
         .post(&format!("{SERVER_URL}/{route}"))
@@ -92,9 +104,20 @@ async fn server_post<T: DeserializeOwned>(
 async fn server_get<T: DeserializeOwned>(
     client: reqwest::Client,
     route: &str,
+    session: Option<String>,
 ) -> Result<T, ServerRequestError> {
+    let mut headers = HeaderMap::new();
+
+    if let Some(session) = session {
+        headers.insert(
+            "Authorization",
+            format!("Bearer {session}").parse().unwrap(),
+        );
+    }
+
     let response = client
         .get(&format!("{SERVER_URL}/{route}"))
+        .headers(headers)
         .send()
         .await
         .map_err(ServerRequestError::ReqwestError)?;
@@ -105,22 +128,6 @@ async fn server_get<T: DeserializeOwned>(
     let response_value =
         serde_json::from_str(&response_data).map_err(ServerRequestError::InvalidDataError)?;
     Ok(response_value)
-}
-
-impl Taco {
-    async fn get_profile_picture(&mut self, user: String) -> Option<String> {
-        match self.profile_picture_cache.get(&user) {
-            Some(pfp) => Some(pfp.clone()),
-            None => {
-                let pfp = server_get::<UserStatus>(self.client.clone(), &format!("status/{user}"))
-                    .await
-                    .ok()
-                    .and_then(|status| status.profile_picture)?;
-                self.profile_picture_cache.insert(user, pfp.clone());
-                Some(pfp)
-            }
-        }
-    }
 }
 
 impl Application for Taco {
@@ -140,7 +147,6 @@ impl Application for Taco {
                     password_input: String::new(),
                 },
                 client,
-                profile_picture_cache: HashMap::new(),
             },
             Command::none(),
         )
@@ -152,9 +158,32 @@ impl Application for Taco {
 
     fn update(&mut self, message: AppMessage) -> Command<AppMessage> {
         match self.state {
-            AppState::LoggedIn { ref session } => match message {
+            AppState::LoggedIn {
+                ref session,
+                ref mut chat_list,
+            } => match message {
+                AppMessage::ChatMessage(msg, id) => {
+                    todo!()
+                }
+                AppMessage::ChatsLoaded(loaded_chats) => {
+                    let chats: Vec<(Command<ChatMessage>, String)> = loaded_chats
+                        .into_iter()
+                        .map(|chat| {
+                            Chat::new(
+                                chat_list.clone(),
+                                session.clone().user_id,
+                                chat.id,
+                                chat.members,
+                            )
+                        })
+                        .collect();
+                    Command::batch(chats.into_iter().map(|(cmd, chat_id)| {
+                        cmd.map(move |msg| AppMessage::ChatMessage(msg, chat_id.clone()))
+                    }))
+                }
                 _ => Command::none(),
             },
+
             AppState::Guest {
                 ref mut username_input,
                 ref mut password_input,
@@ -180,12 +209,23 @@ impl Application for Taco {
                             username: username_input.clone(),
                             password: password_input.clone(),
                         },
+                        None,
                     ),
                     move |register_result| AppMessage::LoggedIn(register_result.unwrap()),
                 ),
                 AppMessage::LoggedIn(session) => {
-                    self.state = AppState::LoggedIn { session };
-                    Command::none()
+                    self.state = AppState::LoggedIn {
+                        session: session.clone(),
+                        chat_list: Arc::new(Mutex::new(ChatList::new(self.client.clone()))),
+                    };
+                    Command::perform(
+                        server_get::<Vec<ChatWithMembers>>(
+                            self.client.clone(),
+                            "chats",
+                            Some(session.session_id),
+                        ),
+                        move |chats| AppMessage::ChatsLoaded(chats.unwrap()),
+                    )
                 }
                 _ => Command::none(),
             },
@@ -194,9 +234,13 @@ impl Application for Taco {
 
     fn view(&self) -> Element<'_, Self::Message> {
         match self.state {
-            AppState::LoggedIn { ref session } => {
+            AppState::LoggedIn {
+                ref session,
+                ref chat_list,
+            } => {
                 let username = &session.user_id;
-                text(format!("Welcome, {username}!")).into()
+                chat_list.blocking_lock().view(username.clone())
+                //column![text(format!("Welcome, {username}!")), chats].into()
             }
             AppState::Guest {
                 ref username_input,

@@ -78,4 +78,10 @@ pub mod requests {
         pub chat_id: String,
         pub message_id: String,
     }
+
+    #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+    pub struct ChatWithMembers {
+        pub id: String,
+        pub members: Vec<String>,
+    }
 }

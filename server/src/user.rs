@@ -13,8 +13,8 @@ use axum::{
 };
 
 use structs::requests::{
-    CreateChat, CreateMessage, DeleteMessage, LeaveChat, UpdateProfile, UserStatus, WsChatMessage,
-    WsCreateChat, WsDeleteMessage, WsLeaveChat,
+    ChatWithMembers, CreateChat, CreateMessage, DeleteMessage, LeaveChat, UpdateProfile,
+    UserStatus, WsChatMessage, WsCreateChat, WsDeleteMessage, WsLeaveChat,
 };
 
 use crate::Session;
@@ -50,14 +50,16 @@ async fn get_user_status(
 user::select!(chat_with_members {
     chats: select {
         id
-        members
+        members: select {
+            id
+        }
     }
 });
 
 async fn get_user_chats(
     State(AppState { client, .. }): State<AppState>,
     session: Session,
-) -> Json<Vec<chat_with_members::chats::Data>> {
+) -> Json<Vec<ChatWithMembers>> {
     Json(
         client
             .user()
@@ -67,7 +69,13 @@ async fn get_user_chats(
             .await
             .unwrap()
             .unwrap()
-            .chats,
+            .chats
+            .into_iter()
+            .map(|chat| ChatWithMembers {
+                id: chat.id,
+                members: chat.members.into_iter().map(|user| user.id).collect(),
+            })
+            .collect(),
     )
 }
 
