@@ -86,7 +86,7 @@ async fn create_chat(
     }): State<AppState>,
     session: Session,
     Json(chat): Json<CreateChat>,
-) -> String {
+) -> Json<ChatWithMembers> {
     let chat = client
         .chat()
         .create(vec![chat::SetParam::ConnectMembers(vec![
@@ -103,18 +103,23 @@ async fn create_chat(
         .await
         .unwrap();
 
+    let member_ids: Vec<String> = chat.members.into_iter().map(|member| member.id).collect();
+
     message_sender
         .send(WsMessage {
-            recipient_ids: HashSet::from_iter(chat.members.iter().map(|member| member.id.clone())),
+            recipient_ids: HashSet::from_iter(member_ids.clone()),
             data: serde_json::to_value(WsCreateChat {
                 chat_id: chat.id.clone(),
-                members: chat.members.into_iter().map(|member| member.id).collect(),
+                members: member_ids.clone(),
             })
             .unwrap(),
         })
         .unwrap();
 
-    chat.id
+    Json(ChatWithMembers {
+        id: chat.id,
+        members: member_ids,
+    })
 }
 
 async fn leave_chat(

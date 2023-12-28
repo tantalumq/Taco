@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use components::{Chat, ChatList, ChatMessage};
+use components::{Chat, ChatList, ChatListMessage, ChatMessage};
 use iced::{
     alignment,
     widget::{button, column, container, focus_next, row, scrollable, text, text_input},
@@ -20,7 +20,7 @@ pub async fn main() -> iced::Result {
     let client = reqwest::Client::new();
     Taco::run(Settings {
         window: iced::window::Settings {
-            min_size: Some((600, 500)),
+            min_size: Some((1, 1)),
             position: iced::window::Position::Default,
             transparent: true,
             icon: None,
@@ -38,7 +38,7 @@ struct Taco {
 enum AppState {
     LoggedIn {
         session: Session,
-        chat_list: Arc<Mutex<ChatList>>,
+        chat_list: ChatList,
     },
     Guest {
         username_input: String,
@@ -55,7 +55,7 @@ enum AppMessage {
     LoggedIn(Session),
     FocusChange,
     ChatsLoaded(Vec<ChatWithMembers>),
-    ChatMessage(ChatMessage, String),
+    ChatListMessage(ChatListMessage),
 }
 
 #[derive(Debug)]
@@ -63,6 +63,7 @@ enum ServerRequestError {
     ReqwestError(reqwest::Error),
     InvalidDataError(serde_json::Error),
     InvalidResponseError(serde_json::Error),
+    Status(reqwest::Error),
 }
 
 async fn server_post<T: DeserializeOwned>(
@@ -91,7 +92,9 @@ async fn server_post<T: DeserializeOwned>(
         )
         .send()
         .await
-        .map_err(ServerRequestError::ReqwestError)?;
+        .map_err(ServerRequestError::ReqwestError)?
+        .error_for_status()
+        .map_err(ServerRequestError::Status)?;
     let response_data = response
         .text()
         .await
@@ -120,7 +123,9 @@ async fn server_get<T: DeserializeOwned>(
         .headers(headers)
         .send()
         .await
-        .map_err(ServerRequestError::ReqwestError)?;
+        .map_err(ServerRequestError::ReqwestError)?
+        .error_for_status()
+        .map_err(ServerRequestError::Status)?;
     let response_data = response
         .text()
         .await
@@ -128,6 +133,13 @@ async fn server_get<T: DeserializeOwned>(
     let response_value =
         serde_json::from_str(&response_data).map_err(ServerRequestError::InvalidDataError)?;
     Ok(response_value)
+}
+
+pub async fn get_profile_picture(client: reqwest::Client, user: String) -> Option<String> {
+    server_get::<UserStatus>(client, &format!("status/{user}"), None)
+        .await
+        .ok()
+        .and_then(|status| status.profile_picture)
 }
 
 impl Application for Taco {
@@ -162,23 +174,23 @@ impl Application for Taco {
                 ref session,
                 ref mut chat_list,
             } => match message {
-                AppMessage::ChatMessage(msg, id) => {
-                    todo!()
-                }
+                AppMessage::ChatListMessage(msg) => chat_list
+                    .update(msg)
+                    .map(|msg| AppMessage::ChatListMessage(msg)),
                 AppMessage::ChatsLoaded(loaded_chats) => {
                     let chats: Vec<(Command<ChatMessage>, String)> = loaded_chats
                         .into_iter()
                         .map(|chat| {
-                            Chat::new(
-                                chat_list.clone(),
-                                session.clone().user_id,
-                                chat.id,
-                                chat.members,
-                            )
+                            Chat::new(chat_list, session.clone().user_id, chat.id, chat.members)
                         })
                         .collect();
                     Command::batch(chats.into_iter().map(|(cmd, chat_id)| {
-                        cmd.map(move |msg| AppMessage::ChatMessage(msg, chat_id.clone()))
+                        cmd.map(move |msg| {
+                            AppMessage::ChatListMessage(ChatListMessage::ChatMessage(
+                                msg,
+                                chat_id.clone(),
+                            ))
+                        })
                     }))
                 }
                 _ => Command::none(),
@@ -216,7 +228,7 @@ impl Application for Taco {
                 AppMessage::LoggedIn(session) => {
                     self.state = AppState::LoggedIn {
                         session: session.clone(),
-                        chat_list: Arc::new(Mutex::new(ChatList::new(self.client.clone()))),
+                        chat_list: ChatList::new(self.client.clone(), session.clone()),
                     };
                     Command::perform(
                         server_get::<Vec<ChatWithMembers>>(
@@ -239,8 +251,14 @@ impl Application for Taco {
                 ref chat_list,
             } => {
                 let username = &session.user_id;
-                chat_list.blocking_lock().view(username.clone())
-                //column![text(format!("Welcome, {username}!")), chats].into()
+                let chats = chat_list
+                    .view(username.clone())
+                    .map(AppMessage::ChatListMessage);
+                column![chats]
+                    .max_width(350)
+                    .padding(15)
+                    .align_items(iced::Alignment::Start)
+                    .into()
             }
             AppState::Guest {
                 ref username_input,
@@ -276,7 +294,7 @@ impl Application for Taco {
                         button_row
                     ]
                     .spacing(10)
-                    .width(Length::Fixed(250.))
+                    .width(Length::Fixed(300.))
                     .align_items(iced::Alignment::Center),
                 )
                 .width(Length::Fill)

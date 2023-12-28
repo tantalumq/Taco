@@ -201,7 +201,7 @@ async fn log_out(State(AppState { client, .. }): State<AppState>, s: Session) {
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
-        .route("/log_in", post(log_in))
-        .route("/log_out", post(log_out))
+        .route("/login", post(log_in))
+        .route("/logout", post(log_out))
         .route("/register", post(register))
 }

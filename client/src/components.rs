@@ -5,62 +5,107 @@ use iced::{
     widget::{
         button, column, container,
         image::{self, Handle},
-        row, scrollable, text, Image,
+        row, scrollable, text, text_input, Image,
     },
     Command, Element, Length,
 };
-use structs::requests::UserStatus;
+use structs::requests::{ChatWithMembers, CreateChat, Session, UserStatus};
 use tokio::sync::Mutex;
 
-use crate::{server_get, AppMessage};
+use crate::{get_profile_picture, server_get, server_post, AppMessage};
 
 pub struct ChatList {
     pub chats: HashMap<String, Chat>,
     pub client: reqwest::Client,
-    pub profile_picture_cache: HashMap<String, String>,
+    pub username_input: String,
+    pub session: Session,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChatListMessage {
+    ChatMessage(ChatMessage, String),
+    AddChat,
+    ChatAdded(ChatWithMembers),
+    UsernameInputChanged(String),
 }
 
 impl ChatList {
-    pub fn new(client: reqwest::Client) -> Self {
+    pub fn new(client: reqwest::Client, session: Session) -> Self {
         Self {
             chats: HashMap::new(),
             client,
-            profile_picture_cache: HashMap::new(),
+            username_input: String::new(),
+            session,
         }
     }
 
-    pub async fn get_profile_picture(&mut self, user: String) -> Option<String> {
-        match self.profile_picture_cache.get(&user) {
-            Some(pfp) => Some(pfp.clone()),
-            None => {
-                let pfp =
-                    server_get::<UserStatus>(self.client.clone(), &format!("status/{user}"), None)
-                        .await
-                        .ok()
-                        .and_then(|status| status.profile_picture)?;
-                self.profile_picture_cache.insert(user, pfp.clone());
-                Some(pfp)
+    pub fn update(&mut self, message: ChatListMessage) -> Command<ChatListMessage> {
+        match message {
+            ChatListMessage::ChatMessage(msg, chat_id) => {
+                self.chats.get_mut(&chat_id).unwrap().update(msg);
+                Command::none()
+            }
+            ChatListMessage::AddChat => Command::perform(
+                server_post::<ChatWithMembers>(
+                    self.client.clone(),
+                    "create_chat",
+                    CreateChat {
+                        other_members: self.username_input.clone(),
+                    },
+                    Some(self.session.session_id.clone()),
+                ),
+                |chat| ChatListMessage::ChatAdded(chat.unwrap()),
+            ),
+            ChatListMessage::ChatAdded(chat) => {
+                let (cmd, id) =
+                    Chat::new(self, self.session.user_id.clone(), chat.id, chat.members);
+                cmd.map(move |msg| ChatListMessage::ChatMessage(msg, id.clone()))
+            }
+            ChatListMessage::UsernameInputChanged(user_id) => {
+                self.username_input = user_id;
+                Command::none()
             }
         }
     }
 
-    pub fn view(&self, current_user_id: String) -> Element<ChatMessage> {
-        scrollable(column(
-            self.chats
-                .iter()
-                .map(|chat| chat.1.view(current_user_id.clone()))
-                .collect(),
-        ))
+    pub fn view(&self, current_user_id: String) -> Element<ChatListMessage> {
+        column![
+            row![
+                text_input("Username", &self.username_input)
+                    .on_input(ChatListMessage::UsernameInputChanged),
+                button("add chat").on_press(ChatListMessage::AddChat),
+            ]
+            .spacing(5),
+            scrollable(
+                column(
+                    self.chats
+                        .iter()
+                        .map(|chat| {
+                            chat.1
+                                .view(current_user_id.clone())
+                                .map(|msg| ChatListMessage::ChatMessage(msg, chat.0.clone()))
+                        })
+                        .collect(),
+                )
+                .width(Length::Fill)
+                .spacing(5)
+                .padding(10),
+            )
+        ]
+        .spacing(5)
         .into()
     }
 }
 
+#[derive(Clone)]
 pub struct Chat {
     pub id: String,
     pub members: Vec<String>,
     pub messages: Vec<Message>,
     pub profile_picture: Option<String>,
 }
+
+#[derive(Clone)]
 pub struct Message {}
 
 #[derive(Debug, Clone, PartialEq)]
@@ -71,12 +116,12 @@ pub enum ChatMessage {
 
 impl Chat {
     pub fn new(
-        chat_list: Arc<Mutex<ChatList>>,
+        chat_list: &mut ChatList,
         current_user_id: String,
         id: String,
         members: Vec<String>,
     ) -> (Command<ChatMessage>, String) {
-        chat_list.blocking_lock().chats.insert(
+        chat_list.chats.insert(
             id.clone(),
             Self {
                 id: id.clone(),
@@ -86,16 +131,10 @@ impl Chat {
             },
         );
 
-        let chat_list = chat_list.clone();
+        let client = chat_list.client.clone();
         (
             Command::perform(
-                async move {
-                    chat_list
-                        .lock()
-                        .await
-                        .get_profile_picture(Chat::get_other_member(current_user_id, members))
-                        .await
-                },
+                get_profile_picture(client, Chat::get_other_member(current_user_id, &members)),
                 |pfp| ChatMessage::ProfilePictureLoaded(pfp),
             ),
             id,
@@ -104,13 +143,15 @@ impl Chat {
 
     pub fn update(&mut self, message: ChatMessage) {
         match message {
+            ChatMessage::ProfilePictureLoaded(pfp) => self.profile_picture = pfp,
             _ => todo!(),
             //ChatMessage::OpenDirectMessage => self.is_opened = true,
         }
     }
 
-    pub fn get_other_member(current_user_id: String, members: Vec<String>) -> String {
-        let members = match (members.get(0), members.get(1)) {
+    pub fn get_other_member(current_user_id: String, members: &[String]) -> String {
+        let first_member = members.get(0);
+        let members = match (first_member, members.get(1).or(first_member)) {
             (Some(a), Some(b)) => (a.clone(), b.clone()),
             _ => panic!("group chats are not supported"),
         };
@@ -124,7 +165,7 @@ impl Chat {
     }
 
     pub fn view(&self, current_user_id: String) -> Element<ChatMessage> {
-        let other_member = Chat::get_other_member(current_user_id, self.members.clone());
+        let other_member = Chat::get_other_member(current_user_id, &self.members);
         let nickname = text(other_member.clone());
         let profile_picture = text(self.profile_picture.clone().unwrap_or(other_member));
 
@@ -136,7 +177,8 @@ impl Chat {
                     .spacing(15)
             ]
             .spacing(10),
-        );
+        )
+        .padding(10);
         container(content).into()
     }
 }
