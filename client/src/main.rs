@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use components::{Chat, ChatList, ChatListMessage, ChatMessage};
+use components::{Chat, ChatList, ChatListMessage, ChatMessage, LetterListMessage};
 use iced::{
     alignment,
     widget::{button, column, container, focus_next, row, scrollable, text, text_input},
@@ -56,6 +56,7 @@ enum AppMessage {
     FocusChange,
     ChatsLoaded(Vec<ChatWithMembers>),
     ChatListMessage(ChatListMessage),
+    LetterListMessage(LetterListMessage),
 }
 
 #[derive(Debug)]
@@ -193,6 +194,13 @@ impl Application for Taco {
                         })
                     }))
                 }
+                AppMessage::LetterListMessage(msg) => chat_list
+                    .chats
+                    .get_mut(&chat_list.opened_chat.clone().unwrap())
+                    .unwrap()
+                    .message_list
+                    .update(msg)
+                    .map(|msg| AppMessage::LetterListMessage(msg)),
                 _ => Command::none(),
             },
 
@@ -251,11 +259,27 @@ impl Application for Taco {
                 ref chat_list,
             } => {
                 let username = &session.user_id;
-                let chats = chat_list
-                    .view(username.clone())
-                    .map(AppMessage::ChatListMessage);
-                column![chats]
-                    .max_width(350)
+                let chats = container(
+                    chat_list
+                        .view(username.clone())
+                        .map(AppMessage::ChatListMessage),
+                )
+                .max_width(350);
+                let opened_chat_id = match chat_list.opened_chat.clone() {
+                    Some(id) => id,
+                    None => String::new(),
+                };
+                let opened_chat = chat_list.chats.get(&opened_chat_id);
+                let messages = match opened_chat {
+                    Some(chat) => container(
+                        chat.message_list
+                            .view(chat.members.clone())
+                            .map(AppMessage::LetterListMessage),
+                    )
+                    .width(Length::Fill),
+                    None => container(text("Choose chat!").size(25)).width(Length::Fill),
+                };
+                row![chats, messages]
                     .padding(15)
                     .align_items(iced::Alignment::Start)
                     .into()

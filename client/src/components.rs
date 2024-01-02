@@ -1,16 +1,12 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+use std::collections::HashMap;
 
 use iced::{
     alignment,
-    widget::{
-        button, column, container,
-        image::{self, Handle},
-        row, scrollable, text, text_input, Image,
-    },
+    theme::Button,
+    widget::{button, column, container, image, row, scrollable, text, text_input, Image},
     Command, Element, Length,
 };
-use structs::requests::{ChatWithMembers, CreateChat, Session, UserStatus};
-use tokio::sync::Mutex;
+use structs::requests::{ChatWithMembers, CreateChat, Session};
 
 use crate::{get_profile_picture, server_get, server_post, AppMessage};
 
@@ -19,6 +15,7 @@ pub struct ChatList {
     pub client: reqwest::Client,
     pub username_input: String,
     pub session: Session,
+    pub opened_chat: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36,12 +33,17 @@ impl ChatList {
             client,
             username_input: String::new(),
             session,
+            opened_chat: None,
         }
     }
 
     pub fn update(&mut self, message: ChatListMessage) -> Command<ChatListMessage> {
         match message {
             ChatListMessage::ChatMessage(msg, chat_id) => {
+                match msg {
+                    ChatMessage::OpenChat => self.opened_chat = Some(chat_id.clone()),
+                    _ => {}
+                };
                 self.chats.get_mut(&chat_id).unwrap().update(msg);
                 Command::none()
             }
@@ -73,7 +75,9 @@ impl ChatList {
             row![
                 text_input("Username", &self.username_input)
                     .on_input(ChatListMessage::UsernameInputChanged),
-                button("add chat").on_press(ChatListMessage::AddChat),
+                button("add chat")
+                    .style(Button::Secondary)
+                    .on_press(ChatListMessage::AddChat),
             ]
             .spacing(5),
             scrollable(
@@ -101,16 +105,13 @@ impl ChatList {
 pub struct Chat {
     pub id: String,
     pub members: Vec<String>,
-    pub messages: Vec<Message>,
+    pub message_list: LetterList,
     pub profile_picture: Option<String>,
 }
 
-#[derive(Clone)]
-pub struct Message {}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChatMessage {
-    OpenDirectMessage,
+    OpenChat,
     ProfilePictureLoaded(Option<String>),
 }
 
@@ -126,7 +127,11 @@ impl Chat {
             Self {
                 id: id.clone(),
                 members: members.clone(),
-                messages: vec![],
+                message_list: LetterList {
+                    messages: HashMap::new(),
+                    client: chat_list.client.clone(),
+                    session: chat_list.session.clone(),
+                },
                 profile_picture: None,
             },
         );
@@ -144,8 +149,8 @@ impl Chat {
     pub fn update(&mut self, message: ChatMessage) {
         match message {
             ChatMessage::ProfilePictureLoaded(pfp) => self.profile_picture = pfp,
+            ChatMessage::OpenChat => {}
             _ => todo!(),
-            //ChatMessage::OpenDirectMessage => self.is_opened = true,
         }
     }
 
@@ -167,24 +172,96 @@ impl Chat {
     pub fn view(&self, current_user_id: String) -> Element<ChatMessage> {
         let other_member = Chat::get_other_member(current_user_id, &self.members);
         let nickname = text(other_member.clone());
-        let profile_picture = text(self.profile_picture.clone().unwrap_or(other_member));
+        //let profile_picture = text(self.profile_picture.clone().unwrap_or(other_member));
+        let pfp = Image::<image::Handle>::new("C:/Users/thisk/bot ava.png")
+            .width(Length::Fixed(50.))
+            .height(Length::Fixed(50.));
 
         let content = button(
             row![
-                profile_picture,
-                column![nickname /* last_message */,]
-                    //.align_items(iced::Alignment::Start)
-                    .spacing(15)
+                //profile_picture,
+                pfp,
+                column![nickname /* last_message */,] //.align_items(iced::Alignment::Start)
+                                                      //.spacing(15)
             ]
-            .spacing(10),
+            .width(Length::Fill)
+            .spacing(10)
+            .align_items(alignment::Alignment::Center),
         )
-        .padding(10);
-        container(content).into()
+        .style(Button::Secondary)
+        .on_press(ChatMessage::OpenChat)
+        .width(Length::Fill);
+        //.padding(10);
+        container(content).width(Length::Fill).padding(5).into()
     }
 }
 
+#[derive(Clone)]
+pub struct LetterList {
+    client: reqwest::Client,
+    session: Session,
+    messages: HashMap<String, Message>,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum LetterListMessage {
+    Message(LetterMessage, String),
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum LetterMessage {}
+impl LetterList {
+    pub fn update(&mut self, message: LetterListMessage) -> Command<LetterListMessage> {
+        match message {
+            LetterListMessage::Message(msg, id) => {
+                match msg {
+                    _ => {}
+                }
+                self.messages.get_mut(&id).unwrap().update(msg);
+                Command::none()
+            }
+        }
+    }
+    pub fn view(&self, members: Vec<String>) -> Element<LetterListMessage> {
+        let nickname_text = text(Chat::get_other_member(
+            self.session.user_id.clone(),
+            &members,
+        ));
+        column![
+            row![nickname_text],
+            scrollable(column(
+                self.messages
+                    .iter()
+                    .map(|message| {
+                        message
+                            .1
+                            .view()
+                            .map(|msg| LetterListMessage::Message(msg, message.0.clone()))
+                    })
+                    .collect()
+            )),
+            row![]
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .spacing(5)
+        .padding(5)
+        .into()
+    }
+}
+
+#[derive(Clone)]
+pub struct Message {
+    id: String,
+    sender: String,
+    content: String,
+}
+
 impl Message {
-    pub fn view(&self, i: usize) -> Element<ChatMessage> {
+    pub fn update(&mut self, message: LetterMessage) -> Command<LetterMessage> {
+        match message {
+            _ => Command::none(),
+        }
+    }
+    pub fn view(&self) -> Element<LetterMessage> {
         todo!()
     }
 }
