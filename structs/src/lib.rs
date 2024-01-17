@@ -1,3 +1,6 @@
+pub use chrono::prelude::*;
+pub use chrono::Duration;
+
 pub mod requests {
     use serde::{Deserialize, Serialize};
 
@@ -35,7 +38,6 @@ pub mod requests {
     #[derive(Debug, Deserialize, Serialize)]
     pub struct CreateMessage {
         pub chat_id: String,
-        pub message_id: String,
         pub content: String,
         pub reply_to_id: Option<String>,
     }
@@ -52,13 +54,14 @@ pub mod requests {
         pub profile_picture: Option<String>,
     }
 
-    #[derive(Debug, Deserialize, Serialize)]
+    #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
     pub struct WsChatMessage {
         pub chat_id: String,
         pub sender_id: String,
         pub message_id: String,
         pub message: String,
         pub reply_to: Option<String>,
+        pub created_at: super::DateTime<super::Utc>,
     }
 
     #[derive(Debug, Deserialize, Serialize)]
@@ -83,5 +86,6 @@ pub mod requests {
     pub struct ChatWithMembers {
         pub id: String,
         pub members: Vec<String>,
+        pub last_updated: super::DateTime<super::Utc>,
     }
 }

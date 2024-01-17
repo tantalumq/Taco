@@ -20,21 +20,23 @@ model User {
 }
 
 model Chat {
-  id       String    @id @default(uuid())
-  members  User[]
-  messages Message[]
+  id           String    @id @default(uuid())
+  members      User[]
+  messages     Message[]
+  last_updated DateTime  @updatedAt
 }
 
 model Message {
-  id       String    @id @default(uuid())
-  chat     Chat      @relation(fields: [chat_id], references: [id])
-  chat_id  String
-  content  String
-  sender   User      @relation(fields: [user_id], references: [id])
-  user_id  String
-  reply_to Message?  @relation("replies", fields: [reply_id], references: [id])
-  reply_id String?
-  replies  Message[] @relation("replies")
+  id         String    @id @default(uuid())
+  chat       Chat      @relation(fields: [chat_id], references: [id])
+  chat_id    String
+  content    String
+  sender     User      @relation(fields: [user_id], references: [id])
+  user_id    String
+  reply_to   Message?  @relation("replies", fields: [reply_id], references: [id])
+  reply_id   String?
+  replies    Message[] @relation("replies")
+  created_at DateTime  @default(now())
 }
 
 model Session {

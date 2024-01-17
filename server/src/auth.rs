@@ -7,10 +7,12 @@ use axum::{
     routing::post,
     Json, Router,
 };
-use chrono::{DateTime, Duration, FixedOffset, Utc};
-use prisma_client_rust::{prisma_errors::query_engine::UniqueKeyViolation, QueryError};
+use prisma_client_rust::prisma_errors::query_engine::UniqueKeyViolation;
 use serde::Serialize;
-use structs::requests::LoginInfo;
+use structs::{
+    requests::LoginInfo,
+    {DateTime, Duration, FixedOffset, Utc},
+};
 
 use crate::{
     prisma::{self, read_filters::StringFilter, session, user},
@@ -27,14 +29,9 @@ fn hash<T: AsRef<str>>(s: T) -> String {
     sha256::digest(s.as_ref())
 }
 
-fn get_now_msk() -> DateTime<FixedOffset> {
-    const HOUR: i32 = 3600;
-    Utc::now().with_timezone(&FixedOffset::east_opt(3 * HOUR).unwrap())
-}
-
 fn get_session_expiry() -> DateTime<FixedOffset> {
     const SESSION_DURATION_DAYS: i64 = 10;
-    get_now_msk() + Duration::days(SESSION_DURATION_DAYS)
+    (Utc::now() + Duration::days(SESSION_DURATION_DAYS)).into()
 }
 
 /// Returns session id
@@ -125,7 +122,7 @@ async fn check_session(client: Arc<prisma::PrismaClient>, session_id: String) ->
         .unwrap();
 
     if let Some(session) = session {
-        if session.expires_at < get_now_msk() {
+        if session.expires_at < Utc::now() {
             client
                 .session()
                 .delete(session::UniqueWhereParam::IdEquals(session_id))

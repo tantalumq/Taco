@@ -8,6 +8,7 @@
         "image",
         "tokio",
     ]}
+    indexmap="2.1.0"
     once_cell="1.19.0"
     reqwest="0.11.23"
     serde={version="1.0.193", features=[

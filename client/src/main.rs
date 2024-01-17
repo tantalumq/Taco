@@ -1,19 +1,20 @@
-use std::{collections::HashMap, sync::Arc};
-
-use components::{Chat, ChatList, ChatListMessage, ChatMessage, LetterListMessage};
+mod components;
+use components::{
+    chat::{Chat, ChatMessage},
+    chat_list::{ChatList, ChatListMessage},
+    ChatButtonStyle,
+};
 use iced::{
-    alignment,
-    widget::{button, column, container, focus_next, row, scrollable, text, text_input},
-    Application, Command, Element, Length, Settings,
+    alignment, font,
+    theme::Button,
+    widget::{button, column, container, focus_next, row, text, text_input},
+    Application, Command, Element, Font, Length, Settings,
 };
 use reqwest::header::HeaderMap;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 use structs::requests::{ChatWithMembers, LoginInfo, Session, UserStatus};
-use tokio::sync::Mutex;
 
 const SERVER_URL: &'static str = "http://localhost:3000";
-
-mod components;
 
 #[tokio::main]
 pub async fn main() -> iced::Result {
@@ -26,6 +27,7 @@ pub async fn main() -> iced::Result {
             icon: None,
             ..Default::default()
         },
+        default_font: Font::with_name("Inter"),
         ..Settings::with_flags(client)
     })
 }
@@ -43,6 +45,7 @@ enum AppState {
     Guest {
         username_input: String,
         password_input: String,
+        logging_in: bool,
     },
 }
 
@@ -56,7 +59,7 @@ enum AppMessage {
     FocusChange,
     ChatsLoaded(Vec<ChatWithMembers>),
     ChatListMessage(ChatListMessage),
-    LetterListMessage(LetterListMessage),
+    FontLoaded(Result<(), font::Error>),
 }
 
 #[derive(Debug)]
@@ -107,7 +110,7 @@ async fn server_post<T: DeserializeOwned>(
 
 async fn server_get<T: DeserializeOwned>(
     client: reqwest::Client,
-    route: &str,
+    route: String,
     session: Option<String>,
 ) -> Result<T, ServerRequestError> {
     let mut headers = HeaderMap::new();
@@ -137,7 +140,7 @@ async fn server_get<T: DeserializeOwned>(
 }
 
 pub async fn get_profile_picture(client: reqwest::Client, user: String) -> Option<String> {
-    server_get::<UserStatus>(client, &format!("status/{user}"), None)
+    server_get::<UserStatus>(client, format!("status/{user}"), None)
         .await
         .ok()
         .and_then(|status| status.profile_picture)
@@ -158,10 +161,11 @@ impl Application for Taco {
                 state: AppState::Guest {
                     username_input: String::new(),
                     password_input: String::new(),
+                    logging_in: false,
                 },
                 client,
             },
-            Command::none(),
+            font::load(include_bytes!("../fonts/inter.ttf").as_slice()).map(AppMessage::FontLoaded),
         )
     }
 
@@ -182,7 +186,13 @@ impl Application for Taco {
                     let chats: Vec<(Command<ChatMessage>, String)> = loaded_chats
                         .into_iter()
                         .map(|chat| {
-                            Chat::new(chat_list, session.clone().user_id, chat.id, chat.members)
+                            Chat::new(
+                                chat_list,
+                                session.clone().user_id,
+                                chat.id,
+                                chat.members,
+                                chat.last_updated,
+                            )
                         })
                         .collect();
                     Command::batch(chats.into_iter().map(|(cmd, chat_id)| {
@@ -194,19 +204,13 @@ impl Application for Taco {
                         })
                     }))
                 }
-                AppMessage::LetterListMessage(msg) => chat_list
-                    .chats
-                    .get_mut(&chat_list.opened_chat.clone().unwrap())
-                    .unwrap()
-                    .message_list
-                    .update(msg)
-                    .map(|msg| AppMessage::LetterListMessage(msg)),
-                _ => Command::none(),
+                _ => panic!("гандон саси хуй *censored*"),
             },
 
             AppState::Guest {
                 ref mut username_input,
                 ref mut password_input,
+                ref mut logging_in,
             } => match message {
                 AppMessage::UsernameInputChanged(value) => {
                     *username_input = value;
@@ -217,22 +221,25 @@ impl Application for Taco {
                     Command::none()
                 }
                 AppMessage::FocusChange => focus_next(),
-                AppMessage::Register | AppMessage::Login => Command::perform(
-                    server_post::<Session>(
-                        self.client.clone(),
-                        if message == AppMessage::Login {
-                            "login"
-                        } else {
-                            "register"
-                        },
-                        LoginInfo {
-                            username: username_input.clone(),
-                            password: password_input.clone(),
-                        },
-                        None,
-                    ),
-                    move |register_result| AppMessage::LoggedIn(register_result.unwrap()),
-                ),
+                AppMessage::Register | AppMessage::Login => {
+                    *logging_in = true;
+                    Command::perform(
+                        server_post::<Session>(
+                            self.client.clone(),
+                            if message == AppMessage::Login {
+                                "login"
+                            } else {
+                                "register"
+                            },
+                            LoginInfo {
+                                username: username_input.clone(),
+                                password: password_input.clone(),
+                            },
+                            None,
+                        ),
+                        move |register_result| AppMessage::LoggedIn(register_result.unwrap()),
+                    )
+                }
                 AppMessage::LoggedIn(session) => {
                     self.state = AppState::LoggedIn {
                         session: session.clone(),
@@ -241,7 +248,7 @@ impl Application for Taco {
                     Command::perform(
                         server_get::<Vec<ChatWithMembers>>(
                             self.client.clone(),
-                            "chats",
+                            "chats".into(),
                             Some(session.session_id),
                         ),
                         move |chats| AppMessage::ChatsLoaded(chats.unwrap()),
@@ -264,29 +271,14 @@ impl Application for Taco {
                         .view(username.clone())
                         .map(AppMessage::ChatListMessage),
                 )
-                .max_width(350);
-                let opened_chat_id = match chat_list.opened_chat.clone() {
-                    Some(id) => id,
-                    None => String::new(),
-                };
-                let opened_chat = chat_list.chats.get(&opened_chat_id);
-                let messages = match opened_chat {
-                    Some(chat) => container(
-                        chat.message_list
-                            .view(chat.members.clone())
-                            .map(AppMessage::LetterListMessage),
-                    )
-                    .width(Length::Fill),
-                    None => container(text("Choose chat!").size(25)).width(Length::Fill),
-                };
-                row![chats, messages]
-                    .padding(15)
-                    .align_items(iced::Alignment::Start)
-                    .into()
+                .width(Length::Fill)
+                .padding(10);
+                chats.into()
             }
             AppState::Guest {
                 ref username_input,
                 ref password_input,
+                logging_in,
             } => {
                 let sign_up_text = text("Sign Up").size(36);
                 let username_text_input = text_input("Username", username_input)
@@ -302,13 +294,18 @@ impl Application for Taco {
                 let center_button = |content| {
                     button(text(content).horizontal_alignment(alignment::Horizontal::Center))
                         .width(Length::Fill)
+                        .style(Button::Custom(Box::new(ChatButtonStyle::SenderMessage)))
                         .padding(10)
                 };
 
-                let button_row = row![
-                    center_button("Log in").on_press(AppMessage::Login),
-                    center_button("Register").on_press(AppMessage::Register),
-                ]
+                let button_row = if logging_in {
+                    row![center_button("Log in"), center_button("Register"),]
+                } else {
+                    row![
+                        center_button("Log in").on_press(AppMessage::Login),
+                        center_button("Register").on_press(AppMessage::Register),
+                    ]
+                }
                 .spacing(10);
                 container(
                     column![

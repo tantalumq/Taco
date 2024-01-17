@@ -12,19 +12,14 @@ use axum::{
     Json, Router,
 };
 
+use chrono::Utc;
+use prisma_client_rust::Direction;
 use structs::requests::{
     ChatWithMembers, CreateChat, CreateMessage, DeleteMessage, LeaveChat, UpdateProfile,
     UserStatus, WsChatMessage, WsCreateChat, WsDeleteMessage, WsLeaveChat,
 };
 
 use crate::Session;
-
-user::select!(user_status {
-    id
-    display_name
-    profile_picture
-    online
-});
 
 async fn get_user_status(
     State(AppState { client, .. }): State<AppState>,
@@ -34,7 +29,12 @@ async fn get_user_status(
         client
             .user()
             .find_unique(user::UniqueWhereParam::IdEquals(user_id))
-            .select(user_status::select())
+            .select(user::select!({
+                id
+                display_name
+                profile_picture
+                online
+            }))
             .exec()
             .await
             .unwrap()
@@ -47,15 +47,6 @@ async fn get_user_status(
     )
 }
 
-user::select!(chat_with_members {
-    chats: select {
-        id
-        members: select {
-            id
-        }
-    }
-});
-
 async fn get_user_chats(
     State(AppState { client, .. }): State<AppState>,
     session: Session,
@@ -64,7 +55,15 @@ async fn get_user_chats(
         client
             .user()
             .find_unique(user::UniqueWhereParam::IdEquals(session.user_id))
-            .select(chat_with_members::select())
+            .select(user::select!({
+                chats: select {
+                    id
+                    members: select {
+                        id
+                    }
+                    last_updated
+                }
+            }))
             .exec()
             .await
             .unwrap()
@@ -74,6 +73,7 @@ async fn get_user_chats(
             .map(|chat| ChatWithMembers {
                 id: chat.id,
                 members: chat.members.into_iter().map(|user| user.id).collect(),
+                last_updated: chat.last_updated.into(),
             })
             .collect(),
     )
@@ -98,6 +98,7 @@ async fn create_chat(
             members: select {
                 id
             }
+            last_updated
         }))
         .exec()
         .await
@@ -119,6 +120,7 @@ async fn create_chat(
     Json(ChatWithMembers {
         id: chat.id,
         members: member_ids,
+        last_updated: chat.last_updated.into(),
     })
 }
 
@@ -160,7 +162,7 @@ async fn get_messages(
     State(AppState { client, .. }): State<AppState>,
     session: Session,
     Path(chat_id): Path<String>,
-) -> Result<Json<Vec<message::Data>>, (StatusCode, &'static str)> {
+) -> Result<Json<Vec<WsChatMessage>>, (StatusCode, &'static str)> {
     let chat = client
         .chat()
         .find_first(vec![
@@ -169,13 +171,27 @@ async fn get_messages(
                 session.user_id,
             ))]),
         ])
-        .select(chat::select!({ messages }))
+        .select(chat::select!({
+            messages(vec![]).order_by(message::created_at::order(Direction::Asc))
+        }))
         .exec()
         .await
         .unwrap()
         .ok_or((StatusCode::NOT_FOUND, "Chat not found"))?;
 
-    Ok(Json(chat.messages))
+    Ok(Json(
+        chat.messages
+            .into_iter()
+            .map(|message| WsChatMessage {
+                chat_id: message.chat_id,
+                sender_id: message.user_id,
+                message: message.content,
+                message_id: message.id,
+                reply_to: message.reply_id,
+                created_at: message.created_at.into(),
+            })
+            .collect(),
+    ))
 }
 
 async fn create_message(
@@ -185,27 +201,33 @@ async fn create_message(
     }): State<AppState>,
     session: Session,
     Json(message): Json<CreateMessage>,
-) -> String {
-    let message = client
-        .message()
-        .create(
-            chat::UniqueWhereParam::IdEquals(message.chat_id),
-            message.content,
-            user::UniqueWhereParam::IdEquals(session.user_id.clone()),
-            option_vec![message
-                .reply_to_id
-                .map(
-                    |id| message::SetParam::ConnectReplyTo(message::UniqueWhereParam::IdEquals(id))
-                )],
-        )
-        .include(message::include!({
-            chat: select {
-                members: select {
-                    id
-                }
-            }
-        }))
-        .exec()
+) -> Json<String> {
+    let (message, _) = client
+        ._batch((
+            client
+                .message()
+                .create(
+                    chat::UniqueWhereParam::IdEquals(message.chat_id.clone()),
+                    message.content,
+                    user::UniqueWhereParam::IdEquals(session.user_id.clone()),
+                    option_vec![message
+                        .reply_to_id
+                        .map(|id| message::SetParam::ConnectReplyTo(
+                            message::UniqueWhereParam::IdEquals(id)
+                        ))],
+                )
+                .include(message::include!({
+                    chat: select {
+                        members: select {
+                            id
+                        }
+                    }
+                })),
+            client.chat().update(
+                chat::UniqueWhereParam::IdEquals(message.chat_id),
+                vec![chat::SetParam::SetLastUpdated(Utc::now().into())],
+            ),
+        ))
         .await
         .unwrap();
 
@@ -220,12 +242,13 @@ async fn create_message(
                 message: message.content,
                 message_id: message.id.clone(),
                 reply_to: message.reply_id,
+                created_at: message.created_at.into(),
             })
             .unwrap(),
         })
         .unwrap();
 
-    message.id
+    Json(message.id)
 }
 
 async fn delete_message(
