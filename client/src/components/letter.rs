@@ -42,7 +42,7 @@ impl Letter {
             column![text(&format!(
                 "↱ {}: {}",
                 reply_message.0.sender_id,
-                truncate_message(reply_message.0.message.clone())
+                truncate_message(reply_message.0.message.clone(), 80)
             ))
             .size(12),]
         } else {

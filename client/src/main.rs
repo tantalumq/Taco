@@ -1,4 +1,6 @@
 mod components;
+use std::fmt::Display;
+
 use components::{
     chat::{Chat, ChatMessage},
     chat_list::{ChatList, ChatListMessage},
@@ -8,11 +10,14 @@ use iced::{
     alignment, font,
     theme::Button,
     widget::{button, column, container, focus_next, row, text, text_input},
-    Application, Command, Element, Font, Length, Settings,
+    Application, Color, Command, Element, Font, Length, Settings,
 };
-use reqwest::header::HeaderMap;
+use iced_aw::modal;
+use reqwest::{header::HeaderMap, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use structs::requests::{ChatWithMembers, LoginInfo, Session, UserStatus};
+
+mod ws_client;
 
 const SERVER_URL: &'static str = "http://localhost:3000";
 
@@ -35,6 +40,7 @@ pub async fn main() -> iced::Result {
 struct Taco {
     state: AppState,
     client: reqwest::Client,
+    error: Option<String>,
 }
 
 enum AppState {
@@ -60,6 +66,9 @@ enum AppMessage {
     ChatsLoaded(Vec<ChatWithMembers>),
     ChatListMessage(ChatListMessage),
     FontLoaded(Result<(), font::Error>),
+    Error(String),
+    CloseError,
+    WsEvent(ws_client::WsEvent),
 }
 
 #[derive(Debug)]
@@ -67,7 +76,27 @@ enum ServerRequestError {
     ReqwestError(reqwest::Error),
     InvalidDataError(serde_json::Error),
     InvalidResponseError(serde_json::Error),
-    Status(reqwest::Error),
+    Status(StatusCode, Option<String>),
+}
+
+impl Display for ServerRequestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ServerRequestError::ReqwestError(err) => err.fmt(f),
+            ServerRequestError::InvalidDataError(err) => err.fmt(f),
+            ServerRequestError::InvalidResponseError(err) => err.fmt(f),
+            ServerRequestError::Status(status, msg) => {
+                write!(
+                    f,
+                    "Status Code {:#?}: {}",
+                    status,
+                    msg.as_ref()
+                        .map(|s| s.as_str())
+                        .unwrap_or("Неизвестная ошибка.")
+                )
+            }
+        }
+    }
 }
 
 async fn server_post<T: DeserializeOwned>(
@@ -96,9 +125,14 @@ async fn server_post<T: DeserializeOwned>(
         )
         .send()
         .await
-        .map_err(ServerRequestError::ReqwestError)?
-        .error_for_status()
-        .map_err(ServerRequestError::Status)?;
+        .map_err(ServerRequestError::ReqwestError)?;
+    let response = match response.status() {
+        StatusCode::OK => Ok(response),
+        status => Err(ServerRequestError::Status(
+            status,
+            response.text().await.ok(),
+        )),
+    }?;
     let response_data = response
         .text()
         .await
@@ -127,9 +161,14 @@ async fn server_get<T: DeserializeOwned>(
         .headers(headers)
         .send()
         .await
-        .map_err(ServerRequestError::ReqwestError)?
-        .error_for_status()
-        .map_err(ServerRequestError::Status)?;
+        .map_err(ServerRequestError::ReqwestError)?;
+    let response = match response.status() {
+        StatusCode::OK => Ok(response),
+        status => Err(ServerRequestError::Status(
+            status,
+            response.text().await.ok(),
+        )),
+    }?;
     let response_data = response
         .text()
         .await
@@ -164,6 +203,7 @@ impl Application for Taco {
                     logging_in: false,
                 },
                 client,
+                error: None,
             },
             font::load(include_bytes!("../fonts/inter.ttf").as_slice()).map(AppMessage::FontLoaded),
         )
@@ -179,9 +219,15 @@ impl Application for Taco {
                 ref session,
                 ref mut chat_list,
             } => match message {
-                AppMessage::ChatListMessage(msg) => chat_list
-                    .update(msg)
-                    .map(|msg| AppMessage::ChatListMessage(msg)),
+                AppMessage::ChatListMessage(msg) => {
+                    if let ChatListMessage::Error(err) = msg {
+                        self.update(AppMessage::Error(err))
+                    } else {
+                        chat_list
+                            .update(msg)
+                            .map(|msg| AppMessage::ChatListMessage(msg))
+                    }
+                }
                 AppMessage::ChatsLoaded(loaded_chats) => {
                     let chats: Vec<(Command<ChatMessage>, String)> = loaded_chats
                         .into_iter()
@@ -204,7 +250,15 @@ impl Application for Taco {
                         })
                     }))
                 }
-                _ => panic!("гандон саси хуй *censored*"),
+                AppMessage::Error(err) => {
+                    self.error = Some(err);
+                    Command::none()
+                }
+                AppMessage::CloseError => {
+                    self.error = None;
+                    Command::none()
+                }
+                _ => Command::none(),
             },
 
             AppState::Guest {
@@ -237,7 +291,10 @@ impl Application for Taco {
                             },
                             None,
                         ),
-                        move |register_result| AppMessage::LoggedIn(register_result.unwrap()),
+                        move |register_result| match register_result {
+                            Ok(session) => AppMessage::LoggedIn(session),
+                            Err(err) => AppMessage::Error(err.to_string()),
+                        },
                     )
                 }
                 AppMessage::LoggedIn(session) => {
@@ -254,79 +311,108 @@ impl Application for Taco {
                         move |chats| AppMessage::ChatsLoaded(chats.unwrap()),
                     )
                 }
+                AppMessage::Error(err) => {
+                    self.error = Some(err);
+                    *logging_in = false;
+                    Command::none()
+                }
+                AppMessage::CloseError => {
+                    self.error = None;
+                    Command::none()
+                }
                 _ => Command::none(),
             },
         }
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        match self.state {
-            AppState::LoggedIn {
-                ref session,
-                ref chat_list,
-            } => {
-                let username = &session.user_id;
-                let chats = container(
-                    chat_list
-                        .view(username.clone())
-                        .map(AppMessage::ChatListMessage),
-                )
-                .width(Length::Fill)
-                .padding(10);
-                chats.into()
-            }
-            AppState::Guest {
-                ref username_input,
-                ref password_input,
-                logging_in,
-            } => {
-                let sign_up_text = text("Sign Up").size(36);
-                let username_text_input = text_input("Username", username_input)
-                    .on_input(AppMessage::UsernameInputChanged)
-                    .on_submit(AppMessage::FocusChange)
-                    .padding(10);
-                let password_text_input = text_input("Password", password_input)
-                    .on_input(AppMessage::PasswordInputChanged)
-                    .on_submit(AppMessage::FocusChange)
-                    .password()
-                    .padding(10);
+        let overlay = self.error.as_ref().map(|err| {
+            container(
+                text(err)
+                    .style(Color::from_rgba8(255, 0, 0, 1.0))
+                    .width(Length::Fill)
+                    .horizontal_alignment(alignment::Horizontal::Center),
+            )
+            .width(Length::Fill)
+            .padding([0, 50])
+        });
 
-                let center_button = |content| {
-                    button(text(content).horizontal_alignment(alignment::Horizontal::Center))
+        modal(
+            match self.state {
+                AppState::LoggedIn {
+                    ref session,
+                    ref chat_list,
+                } => {
+                    let username = &session.user_id;
+                    let chats = container(
+                        chat_list
+                            .view(username.clone())
+                            .map(AppMessage::ChatListMessage),
+                    )
+                    .width(Length::Fill)
+                    .padding(10);
+                    chats
+                }
+                AppState::Guest {
+                    ref username_input,
+                    ref password_input,
+                    logging_in,
+                } => {
+                    let sign_up_text = text("Вход").size(36);
+                    let username_text_input = text_input("Имя пользователя", username_input)
+                        .on_input(AppMessage::UsernameInputChanged)
+                        .on_submit(AppMessage::FocusChange)
+                        .padding(10);
+                    let password_text_input = text_input("Пароль", password_input)
+                        .on_input(AppMessage::PasswordInputChanged)
+                        .on_submit(AppMessage::FocusChange)
+                        .password()
+                        .padding(10);
+
+                    let center_button = |content| {
+                        button(
+                            text(content)
+                                //.size(13)
+                                .horizontal_alignment(alignment::Horizontal::Center),
+                        )
                         .width(Length::Fill)
                         .style(Button::Custom(Box::new(ChatButtonStyle::SenderMessage)))
                         .padding(10)
-                };
+                    };
 
-                let button_row = if logging_in {
-                    row![center_button("Log in"), center_button("Register"),]
-                } else {
-                    row![
-                        center_button("Log in").on_press(AppMessage::Login),
-                        center_button("Register").on_press(AppMessage::Register),
-                    ]
+                    let button_row = if logging_in {
+                        row![center_button("Войти"), center_button("Зарегистрироваться"),]
+                    } else {
+                        row![
+                            center_button("Войти").on_press(AppMessage::Login),
+                            center_button("Зарегистрироваться").on_press(AppMessage::Register),
+                        ]
+                    }
+                    .spacing(10);
+                    container(
+                        column![
+                            sign_up_text,
+                            username_text_input,
+                            password_text_input,
+                            button_row
+                        ]
+                        .spacing(10)
+                        .width(Length::Fixed(400.))
+                        .align_items(iced::Alignment::Center),
+                    )
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .center_x()
+                    .center_y()
+                    .into()
                 }
-                .spacing(10);
-                container(
-                    column![
-                        sign_up_text,
-                        username_text_input,
-                        password_text_input,
-                        button_row
-                    ]
-                    .spacing(10)
-                    .width(Length::Fixed(300.))
-                    .align_items(iced::Alignment::Center),
-                )
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x()
-                .center_y()
-                .into()
-            }
-        }
-
-        //container(content).into()
+            },
+            overlay,
+        )
+        .backdrop(AppMessage::CloseError)
+        .on_esc(AppMessage::CloseError)
+        .align_y(alignment::Vertical::Center)
+        .into()
     }
 
     fn theme(&self) -> Self::Theme {
@@ -338,7 +424,11 @@ impl Application for Taco {
     }
 
     fn subscription(&self) -> iced::Subscription<Self::Message> {
-        iced::Subscription::none()
+        match &self.state {
+            AppState::LoggedIn { session, .. } => ws_client::connect(session.session_id.clone())
+                .map(|event| AppMessage::WsEvent(event)),
+            AppState::Guest { .. } => iced::Subscription::none(),
+        }
     }
 
     fn scale_factor(&self) -> f64 {

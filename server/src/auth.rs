@@ -55,9 +55,23 @@ async fn register(
     Json(info): Json<LoginInfo>,
 ) -> Result<Json<Session>, (StatusCode, String)> {
     const MAX_USERNAME_LENGTH: usize = 20;
+    const MIN_USERNAME_LENGTH: usize = 3;
+    const MIN_PASSWORD_LENGTH: usize = 4;
 
     if info.username.len() > MAX_USERNAME_LENGTH {
-        return Err((StatusCode::BAD_REQUEST, "Username too long!".into()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Имя пользователя слишком длинное!".into(),
+        ));
+    }
+    if info.username.len() < MIN_USERNAME_LENGTH {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Имя пользователя слишком короткое!".into(),
+        ));
+    }
+    if info.password.len() < MIN_PASSWORD_LENGTH {
+        return Err((StatusCode::BAD_REQUEST, "Пароль слишком короткий!".into()));
     }
 
     client
@@ -72,7 +86,7 @@ async fn register(
         .await
         .map_err(|err| match err {
             err if err.is_prisma_error::<UniqueKeyViolation>() => {
-                (StatusCode::CONFLICT, "Name was already taken".into())
+                (StatusCode::CONFLICT, "Имя пользователя уже занято!".into())
             }
             err => (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -90,7 +104,7 @@ async fn register(
 async fn log_in(
     State(AppState { client, .. }): State<AppState>,
     Json(info): Json<LoginInfo>,
-) -> Json<Option<Session>> {
+) -> Result<Json<Session>, (StatusCode, &'static str)> {
     let user = client
         .user()
         .find_first(vec![
@@ -103,12 +117,15 @@ async fn log_in(
 
     if let Some(user) = user {
         let session_id = create_session(client, user.id.clone()).await;
-        Json(Some(Session {
+        Ok(Json(Session {
             user_id: user.id,
             session_id,
         }))
     } else {
-        Json(None)
+        Err((
+            StatusCode::NOT_FOUND,
+            "Неверное имя пользователя или пароль!",
+        ))
     }
 }
 
@@ -173,7 +190,7 @@ impl FromRequestParts<AppState> for Session {
             Some((name, session_id)) if name == "Bearer" => {
                 check_session(client.clone(), session_id.into())
                     .await
-                    .ok_or((StatusCode::BAD_REQUEST, "Invalid session"))
+                    .ok_or((StatusCode::BAD_REQUEST, "Некорректная сессия"))
                     .map(|user_id| Session {
                         session_id: session_id.into(),
                         user_id,

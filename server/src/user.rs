@@ -85,13 +85,17 @@ async fn create_chat(
         message_sender,
     }): State<AppState>,
     session: Session,
-    Json(chat): Json<CreateChat>,
-) -> Json<ChatWithMembers> {
+    Json(create_chat): Json<CreateChat>,
+) -> Result<Json<ChatWithMembers>, (StatusCode, &'static str)> {
+    if create_chat.other_members == session.user_id {
+        return Err((StatusCode::CONFLICT, "Нельзя создать чат с самим собой!"));
+    }
+
     let chat = client
         .chat()
         .create(vec![chat::SetParam::ConnectMembers(vec![
             user::UniqueWhereParam::IdEquals(session.user_id),
-            user::UniqueWhereParam::IdEquals(chat.other_members),
+            user::UniqueWhereParam::IdEquals(create_chat.other_members),
         ])])
         .select(chat::select!({
             id
@@ -117,11 +121,11 @@ async fn create_chat(
         })
         .unwrap();
 
-    Json(ChatWithMembers {
+    Ok(Json(ChatWithMembers {
         id: chat.id,
         members: member_ids,
         last_updated: chat.last_updated.into(),
-    })
+    }))
 }
 
 async fn leave_chat(
@@ -144,7 +148,7 @@ async fn leave_chat(
         .exec()
         .await
         .unwrap()
-        .ok_or((StatusCode::NOT_FOUND, "Chat was not found"))?;
+        .ok_or((StatusCode::NOT_FOUND, "Чат не найден!"))?;
     message_sender
         .send(WsMessage {
             recipient_ids: HashSet::from_iter(chat.members.into_iter().map(|member| member.id)),
@@ -177,7 +181,7 @@ async fn get_messages(
         .exec()
         .await
         .unwrap()
-        .ok_or((StatusCode::NOT_FOUND, "Chat not found"))?;
+        .ok_or((StatusCode::NOT_FOUND, "Чат не найден"))?;
 
     Ok(Json(
         chat.messages

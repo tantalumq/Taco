@@ -6,7 +6,7 @@ use crate::{
 use super::{
     chat::Chat,
     letter::{Letter, LetterMessage},
-    ScrollableStyle,
+    ScrollableStyle, ICON_FONT,
 };
 use iced::{
     alignment,
@@ -85,7 +85,7 @@ impl LetterList {
                 //self.messages.get_mut(&id).unwrap().update(msg);
             }
             LetterListMessage::MessageInputChanged(value) => {
-                self.message_input = value;
+                self.message_input = truncate_message(value, 300);
                 Command::none()
             }
             LetterListMessage::SendPressed => {
@@ -147,7 +147,7 @@ impl LetterList {
                 text(&format!(
                     "↱ {}: {}",
                     message.sender_id,
-                    truncate_message(content)
+                    truncate_message(content, 80)
                 )),
                 Space::with_width(Length::Fill),
                 button("×")
@@ -187,11 +187,11 @@ impl LetterList {
             .style(Scrollable::Custom(Box::new(ScrollableStyle))),
             message_send_column.spacing(8).push(
                 row![
-                    text_input("Message", &self.message_input)
+                    text_input("Сообщение", &self.message_input)
                         .padding(8)
                         .on_input(|value| LetterListMessage::MessageInputChanged(value))
                         .on_submit(LetterListMessage::SendPressed),
-                    button("Send")
+                    button(text("").font(ICON_FONT))
                         .padding([8, 18])
                         .style(Button::Custom(Box::new(ChatButtonStyle::SenderMessage)))
                         .on_press(LetterListMessage::SendPressed)

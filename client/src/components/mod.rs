@@ -5,9 +5,10 @@ use iced::{
 
 const ICON_FONT: Font = Font::with_name("Segoe MDL2 Assets");
 
-fn truncate_message(message: String) -> String {
-    if message.len() > 70 {
-        message[..70].to_string() + "..."
+fn truncate_message(message: String, length: usize) -> String {
+    let chars = message.chars();
+    if chars.clone().count() > length {
+        chars.take(length).collect::<String>() + "..."
     } else {
         message
     }

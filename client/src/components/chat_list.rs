@@ -35,6 +35,7 @@ pub enum ChatListMessage {
     UsernameInputChanged(String),
     MessagesLoaded(Vec<WsChatMessage>),
     LetterListMessage(LetterListMessage),
+    Error(String),
 }
 
 impl ChatList {
@@ -88,8 +89,12 @@ impl ChatList {
                     },
                     Some(self.session.session_id.clone()),
                 ),
-                |chat| ChatListMessage::ChatAdded(chat.unwrap()),
+                |chat| match chat {
+                    Ok(chat) => ChatListMessage::ChatAdded(chat),
+                    Err(error) => ChatListMessage::Error(error.to_string()),
+                },
             ),
+
             ChatListMessage::ChatAdded(chat) => {
                 let (cmd, id) = Chat::new(
                     self,
@@ -125,6 +130,7 @@ impl ChatList {
                     .update(msg)
                     .map(|msg| ChatListMessage::LetterListMessage(msg))
             }
+            _ => Command::none(),
         }
     }
 
@@ -147,7 +153,7 @@ impl ChatList {
         let mut chat_list_letter_list = row![container(
             column![
                 row![
-                    text_input("Username", &self.username_input)
+                    text_input("Имя пользователя", &self.username_input)
                         .padding(8)
                         .on_input(ChatListMessage::UsernameInputChanged),
                     button(text("").font(ICON_FONT))

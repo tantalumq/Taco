@@ -66,7 +66,7 @@ impl Chat {
         let first_member = members.get(0);
         let members = match (first_member, members.get(1).or(first_member)) {
             (Some(a), Some(b)) => (a.clone(), b.clone()),
-            _ => panic!("group chats are not supported"),
+            _ => panic!("group chats are not supported ( иди нахуй шаман )"),
         };
 
         let other_member = if members.0 == current_user_id {
