@@ -64,22 +64,30 @@ pub mod requests {
         pub created_at: super::DateTime<super::Utc>,
     }
 
-    #[derive(Debug, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
     pub struct WsCreateChat {
         pub chat_id: String,
         pub members: Vec<String>,
     }
 
-    #[derive(Debug, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
     pub struct WsLeaveChat {
         pub chat_id: String,
         pub member: String,
     }
 
-    #[derive(Debug, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
     pub struct WsDeleteMessage {
         pub chat_id: String,
         pub message_id: String,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+    pub enum WsMessageData {
+        ChatMessage(WsChatMessage),
+        CreateChat(WsCreateChat),
+        LeaveChat(WsLeaveChat),
+        DeleteMessage(WsDeleteMessage),
     }
 
     #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]

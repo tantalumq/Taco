@@ -16,7 +16,7 @@ use chrono::Utc;
 use prisma_client_rust::Direction;
 use structs::requests::{
     ChatWithMembers, CreateChat, CreateMessage, DeleteMessage, LeaveChat, UpdateProfile,
-    UserStatus, WsChatMessage, WsCreateChat, WsDeleteMessage, WsLeaveChat,
+    UserStatus, WsChatMessage, WsCreateChat, WsDeleteMessage, WsLeaveChat, WsMessageData,
 };
 
 use crate::Session;
@@ -91,6 +91,21 @@ async fn create_chat(
         return Err((StatusCode::CONFLICT, "Нельзя создать чат с самим собой!"));
     }
 
+    let user = client
+        .user()
+        .find_unique(user::UniqueWhereParam::IdEquals(
+            create_chat.other_members.clone(),
+        ))
+        .exec()
+        .await
+        .unwrap();
+    if user.is_none() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Такого пользователя не существует!",
+        ));
+    }
+
     let chat = client
         .chat()
         .create(vec![chat::SetParam::ConnectMembers(vec![
@@ -113,11 +128,10 @@ async fn create_chat(
     message_sender
         .send(WsMessage {
             recipient_ids: HashSet::from_iter(member_ids.clone()),
-            data: serde_json::to_value(WsCreateChat {
+            data: WsMessageData::CreateChat(WsCreateChat {
                 chat_id: chat.id.clone(),
                 members: member_ids.clone(),
-            })
-            .unwrap(),
+            }),
         })
         .unwrap();
 
@@ -152,11 +166,10 @@ async fn leave_chat(
     message_sender
         .send(WsMessage {
             recipient_ids: HashSet::from_iter(chat.members.into_iter().map(|member| member.id)),
-            data: serde_json::to_value(WsLeaveChat {
+            data: WsMessageData::LeaveChat(WsLeaveChat {
                 chat_id: chat.id,
                 member: session.user_id,
-            })
-            .unwrap(),
+            }),
         })
         .unwrap();
     Ok(())
@@ -240,15 +253,14 @@ async fn create_message(
             recipient_ids: HashSet::from_iter(
                 message.chat.members.into_iter().map(|member| member.id),
             ),
-            data: serde_json::to_value(WsChatMessage {
+            data: WsMessageData::ChatMessage(WsChatMessage {
                 chat_id: message.chat_id,
                 sender_id: session.user_id,
                 message: message.content,
                 message_id: message.id.clone(),
                 reply_to: message.reply_id,
                 created_at: message.created_at.into(),
-            })
-            .unwrap(),
+            }),
         })
         .unwrap();
 
@@ -281,11 +293,10 @@ async fn delete_message(
             recipient_ids: HashSet::from_iter(
                 message.chat.members.into_iter().map(|member| member.id),
             ),
-            data: serde_json::to_value(WsDeleteMessage {
+            data: WsMessageData::DeleteMessage(WsDeleteMessage {
                 chat_id: message.chat.id,
                 message_id: message.id,
-            })
-            .unwrap(),
+            }),
         })
         .unwrap();
 }

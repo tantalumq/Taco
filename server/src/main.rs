@@ -10,6 +10,7 @@ use axum::{
 use futures::{sink::SinkExt, stream::StreamExt};
 use serde_json::Value;
 use std::{collections::HashSet, sync::Arc};
+use structs::requests::WsMessageData;
 use tokio::sync::broadcast;
 
 #[allow(warnings, unused)]
@@ -36,7 +37,7 @@ pub(crate) use option_vec;
 #[derive(Clone, Debug)]
 pub(crate) struct WsMessage {
     recipient_ids: HashSet<String>,
-    data: Value,
+    data: WsMessageData,
 }
 
 #[derive(Clone)]
@@ -82,7 +83,7 @@ async fn handle_client(state: AppState, user_id: String, ws: WebSocket) {
     while let Ok(msg) = message_receiver.recv().await {
         if msg.recipient_ids.contains(&user_id) {
             if sender
-                .send(Message::Text(msg.data.to_string()))
+                .send(Message::Text(serde_json::to_string(&msg.data).unwrap()))
                 .await
                 .is_err()
             {

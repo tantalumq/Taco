@@ -15,7 +15,10 @@ use iced::{
 use iced_aw::modal;
 use reqwest::{header::HeaderMap, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
-use structs::requests::{ChatWithMembers, LoginInfo, Session, UserStatus};
+use structs::requests::{ChatWithMembers, LoginInfo, Session, UserStatus, WsMessageData};
+use ws_client::WsEvent;
+
+use crate::components::letter_list::LetterListMessage;
 
 mod ws_client;
 
@@ -257,6 +260,21 @@ impl Application for Taco {
                 AppMessage::CloseError => {
                     self.error = None;
                     Command::none()
+                }
+                AppMessage::WsEvent(WsEvent::Message(msg)) => {
+                    dbg!(&msg);
+                    match msg {
+                        WsMessageData::ChatMessage(msg) => {
+                            if let Some(ref opened_chat) = chat_list.opened_chat {
+                                if opened_chat == &msg.chat_id {
+                                    self.error = Some("bitch".into());
+                                    chat_list.opened_chat_messages.add_message(msg);
+                                }
+                            }
+                            Command::none()
+                        }
+                        _ => Command::none(),
+                    }
                 }
                 _ => Command::none(),
             },
