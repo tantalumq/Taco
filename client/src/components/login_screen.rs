@@ -71,6 +71,10 @@ impl LoginScreen {
         }
     }
 
+    pub fn subscription(&self) -> iced::Subscription<LoginScreenMessage> {
+        iced::Subscription::none()
+    }
+
     pub fn view(&self) -> iced::Element<LoginScreenMessage> {
         let sign_up_text = text("Вход").size(36);
         let username_text_input = text_input("Имя пользователя", &self.username_input)

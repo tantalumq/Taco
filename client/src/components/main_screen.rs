@@ -27,24 +27,24 @@ impl MainScreen {
         client: reqwest::Client,
     ) -> (Self, iced::Command<MainScreenMessage>) {
         let screen = Self {
-            session,
-            client,
+            session: session.clone(),
+            client: client.clone(),
             chat_list: ChatList::new(client.clone(), session.clone()),
         };
         (
             screen,
             iced::Command::perform(
                 server::server_get::<Vec<ChatWithMembers>>(
-                    client.clone(),
+                    client,
                     "chats".into(),
-                    Some(session.session_id),
+                    Some(session.session_id.clone()),
                 ),
                 move |chats| MainScreenMessage::ChatsLoaded(chats.unwrap()),
             ),
         )
     }
 
-    pub fn update(&self, message: MainScreenMessage) -> iced::Command<MainScreenMessage> {
+    pub fn update(&mut self, message: MainScreenMessage) -> iced::Command<MainScreenMessage> {
         match message {
             MainScreenMessage::ChatListMessage(msg) => self.chat_list.update(msg).map(|msg| {
                 if let ChatListMessage::Error(err) = msg {
@@ -77,6 +77,12 @@ impl MainScreen {
             }
             _ => iced::Command::none(),
         }
+    }
+
+    pub fn subscription(&self) -> iced::Subscription<MainScreenMessage> {
+        self.chat_list
+            .subscription()
+            .map(|msg| MainScreenMessage::ChatListMessage(msg))
     }
 
     pub fn view(&self) -> iced::Element<MainScreenMessage> {

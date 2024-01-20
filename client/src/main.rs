@@ -1,7 +1,7 @@
 use components::{
     chat::{Chat, ChatMessage},
     chat_list::{ChatList, ChatListMessage},
-    login_screen::{LoginScreen, LoginScreenMessage},
+    login_screen::{self, LoginScreen, LoginScreenMessage},
     main_screen::{MainScreen, MainScreenMessage},
 };
 use iced::{
@@ -162,10 +162,12 @@ impl Application for Taco {
 
     fn subscription(&self) -> iced::Subscription<Self::Message> {
         match &self.state {
-            AppState::LoggedIn { chat_list, .. } => chat_list
+            AppState::LoggedIn(main_screen) => main_screen
                 .subscription()
-                .map(|msg| AppMessage::ChatListMessage(msg)),
-            AppState::Guest { .. } => iced::Subscription::none(),
+                .map(|msg| AppMessage::MainScreen(msg)),
+            AppState::Guest(login_screen) => login_screen
+                .subscription()
+                .map(|msg| AppMessage::LoginScreen(msg)),
         }
     }
 
