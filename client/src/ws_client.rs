@@ -1,9 +1,4 @@
-use std::time::Duration;
-
-use iced::{
-    futures::{FutureExt, SinkExt, StreamExt},
-    subscription, Subscription,
-};
+use iced::{futures::StreamExt, subscription, Subscription};
 use structs::requests::WsMessageData;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
@@ -18,23 +13,23 @@ pub enum WsEvent {
 }
 
 enum State {
-    Starting,
+    Starting(String),
     Ready(WebSocketStream<MaybeTlsStream<TcpStream>>),
 }
 
 pub fn connect(session: String) -> Subscription<WsEvent> {
     subscription::unfold(
         "get websocket messages",
-        State::Starting,
-        move |mut s| async move {
+        State::Starting(session),
+        |mut s| async {
             match &mut s {
-                State::Starting => {
+                State::Starting(session) => {
                     const WS: &str = "ws://127.0.0.1:3000/ws";
-                    let session = format!("Bearer {session}");
                     let mut request = WS.into_client_request().unwrap();
-                    request
-                        .headers_mut()
-                        .insert("Authorization", HeaderValue::from_str(&session).unwrap());
+                    request.headers_mut().insert(
+                        "Authorization",
+                        HeaderValue::from_str(&format!("Bearer {}", session.clone())).unwrap(),
+                    );
                     let (stream, _) = tokio_tungstenite::connect_async(request).await.unwrap();
                     (WsEvent::Ready, State::Ready(stream))
                 }

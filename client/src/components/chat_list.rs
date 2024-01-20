@@ -6,11 +6,13 @@ use iced::{
     Command, Element, Length,
 };
 use structs::{
-    requests::{ChatWithMembers, CreateChat, Session, WsChatMessage},
+    requests::{
+        ChatWithMembers, CreateChat, Session, WsChatMessage, WsDeleteMessage, WsMessageData,
+    },
     Utc,
 };
 
-use crate::{server_get, server_post};
+use crate::{server::server_get, server::server_post, ws_client::WsEvent};
 
 use super::{
     chat::{Chat, ChatMessage},
@@ -116,22 +118,65 @@ impl ChatList {
                 }
                 Command::none()
             }
-            ChatListMessage::LetterListMessage(msg) => {
-                match msg {
-                    LetterListMessage::MessageSent { id: _, message: _ } => {
-                        self.chats
-                            .get_mut(self.opened_chat.as_ref().unwrap())
-                            .unwrap()
-                            .last_updated = Utc::now();
-                    }
-                    _ => {}
+            ChatListMessage::LetterListMessage(msg) => match msg {
+                LetterListMessage::MessageSent { .. }
+                | LetterListMessage::MessageDeleted { .. } => {
+                    self.chats
+                        .get_mut(self.opened_chat.as_ref().unwrap())
+                        .unwrap()
+                        .last_updated = Utc::now();
+
+                    self.opened_chat_messages
+                        .update(msg)
+                        .map(|msg| ChatListMessage::LetterListMessage(msg))
                 }
-                self.opened_chat_messages
-                    .update(msg)
-                    .map(|msg| ChatListMessage::LetterListMessage(msg))
-            }
+                LetterListMessage::WsEvent(WsEvent::Message(WsMessageData::CreateChat(chat))) => {
+                    self.update(ChatListMessage::ChatAdded(ChatWithMembers {
+                        id: chat.chat_id,
+                        members: chat.members,
+                        last_updated: Utc::now(),
+                    }))
+                }
+                LetterListMessage::WsEvent(WsEvent::Message(ref ws_msg)) => {
+                    match ws_msg {
+                        WsMessageData::ChatMessage(WsChatMessage { chat_id, .. })
+                        | WsMessageData::DeleteMessage(WsDeleteMessage { chat_id, .. }) => {
+                            self.chats.get_mut(chat_id).unwrap().last_updated = Utc::now();
+                        }
+                        _ => {}
+                    }
+                    self.opened_chat_messages
+                        .update(msg)
+                        .map(|msg| ChatListMessage::LetterListMessage(msg))
+                }
+                LetterListMessage::ChatDeleted(chat) => {
+                    if self
+                        .opened_chat
+                        .as_ref()
+                        .is_some_and(|c| c == &chat.chat_id)
+                    {
+                        self.opened_chat = None;
+                        self.opened_chat_messages.chat_id = None;
+                    }
+                    self.chats.remove(&chat.chat_id);
+                    Command::none()
+                }
+                _ => self.opened_chat_messages.update(msg).map(|msg| {
+                    if let LetterListMessage::Error(err) = msg {
+                        ChatListMessage::Error(err)
+                    } else {
+                        ChatListMessage::LetterListMessage(msg)
+                    }
+                }),
+            },
             _ => Command::none(),
         }
+    }
+
+    pub fn subscription(&self) -> iced::Subscription<ChatListMessage> {
+        self.opened_chat_messages
+            .subscription()
+            .map(|msg| ChatListMessage::LetterListMessage(msg))
     }
 
     pub fn view(&self, current_user_id: String) -> Element<ChatListMessage> {

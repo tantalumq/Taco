@@ -6,7 +6,7 @@ use crate::{
     AppState, WsMessage,
 };
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
@@ -149,7 +149,7 @@ async fn leave_chat(
     }): State<AppState>,
     session: Session,
     Json(chat): Json<LeaveChat>,
-) -> Result<(), (StatusCode, &'static str)> {
+) -> Result<Json<()>, (StatusCode, &'static str)> {
     let chat = client
         .chat()
         .find_unique(chat::UniqueWhereParam::IdEquals(chat.chat_id))
@@ -163,6 +163,22 @@ async fn leave_chat(
         .await
         .unwrap()
         .ok_or((StatusCode::NOT_FOUND, "Чат не найден!"))?;
+    if !chat
+        .members
+        .iter()
+        .any(|member| member.id == session.user_id)
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Вы не являетесь участником данного чата!",
+        ));
+    }
+    client
+        .chat()
+        .delete(chat::UniqueWhereParam::IdEquals(chat.id.clone()))
+        .exec()
+        .await
+        .unwrap();
     message_sender
         .send(WsMessage {
             recipient_ids: HashSet::from_iter(chat.members.into_iter().map(|member| member.id)),
@@ -172,7 +188,7 @@ async fn leave_chat(
             }),
         })
         .unwrap();
-    Ok(())
+    Ok(Json(()))
 }
 
 async fn get_messages(

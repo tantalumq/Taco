@@ -1,12 +1,12 @@
-use crate::{
-    components::{truncate_message, ChatButtonStyle},
-    server_get, server_post,
-};
-
 use super::{
     chat::Chat,
     letter::{Letter, LetterMessage},
     ScrollableStyle, ICON_FONT,
+};
+use crate::{
+    components::{truncate_message, ChatButtonStyle},
+    server::server_post,
+    ws_client,
 };
 use iced::{
     alignment,
@@ -18,8 +18,10 @@ use iced::{
 };
 use indexmap::IndexMap;
 
-use structs::requests::{CreateMessage, DeleteMessage, Session, WsChatMessage};
-use structs::{DateTime, FixedOffset, Utc};
+use structs::requests::{
+    CreateMessage, DeleteMessage, LeaveChat, Session, WsChatMessage, WsLeaveChat, WsMessageData,
+};
+use structs::Utc;
 
 #[derive(Clone)]
 pub struct LetterList {
@@ -36,9 +38,18 @@ pub enum LetterListMessage {
     LetterMessage(LetterMessage, String),
     MessageInputChanged(String),
     SendPressed,
-    MessageSent { id: String, message: String },
+    MessageSent {
+        id: String,
+        message: String,
+        sender: String,
+        reply_to: Option<String>,
+    },
     CancelReply,
     MessageDeleted(String),
+    WsEvent(ws_client::WsEvent),
+    ChatDelete,
+    ChatDeleted(WsLeaveChat),
+    Error(String),
 }
 
 impl LetterList {
@@ -80,7 +91,6 @@ impl LetterList {
                         ),
                         move |_| LetterListMessage::MessageDeleted(id),
                     ),
-                    _ => Command::none(),
                 }
                 //self.messages.get_mut(&id).unwrap().update(msg);
             }
@@ -93,6 +103,8 @@ impl LetterList {
                 self.message_input = String::new();
                 let client = self.client.clone();
                 let reply_to_id = self.replying_to.clone();
+                let sender = self.session.user_id.clone();
+                self.replying_to = None;
                 Command::perform(
                     server_post::<String>(
                         client,
@@ -100,26 +112,32 @@ impl LetterList {
                         CreateMessage {
                             chat_id: self.chat_id.clone().unwrap(),
                             content: message.clone(),
-                            reply_to_id,
+                            reply_to_id: reply_to_id.clone(),
                         },
                         Some(self.session.session_id.clone()),
                     ),
                     move |msg| LetterListMessage::MessageSent {
                         id: msg.unwrap(),
                         message,
+                        sender,
+                        reply_to: reply_to_id,
                     },
                 )
             }
-            LetterListMessage::MessageSent { id, message } => {
+            LetterListMessage::MessageSent {
+                id,
+                message,
+                sender,
+                reply_to,
+            } => {
                 self.add_message(WsChatMessage {
                     message_id: id,
                     message,
-                    sender_id: self.session.user_id.clone(),
+                    sender_id: sender,
                     chat_id: self.chat_id.as_ref().unwrap().clone(),
-                    reply_to: self.replying_to.clone(),
+                    reply_to,
                     created_at: Utc::now(),
                 });
-                self.replying_to = None;
                 scrollable::snap_to(self.scrollable_id.clone(), RelativeOffset::END)
             }
             LetterListMessage::CancelReply => {
@@ -127,11 +145,60 @@ impl LetterList {
                 Command::none()
             }
             LetterListMessage::MessageDeleted(id) => {
+                if let Some(reply) = &self.replying_to {
+                    if reply == &id {
+                        self.replying_to = None;
+                    }
+                }
                 self.messages.remove(&id);
                 Command::none()
             }
+            LetterListMessage::WsEvent(ws_client::WsEvent::Message(data)) => match data {
+                WsMessageData::ChatMessage(msg) => {
+                    if let Some(chat) = &self.chat_id {
+                        if chat == &msg.chat_id {
+                            return self.update(LetterListMessage::MessageSent {
+                                id: msg.message_id,
+                                message: msg.message,
+                                sender: msg.sender_id,
+                                reply_to: msg.reply_to,
+                            });
+                        }
+                    }
+                    Command::none()
+                }
+                WsMessageData::DeleteMessage(msg) => {
+                    self.update(LetterListMessage::MessageDeleted(msg.message_id))
+                }
+                _ => Command::none(),
+            },
+            LetterListMessage::ChatDelete => {
+                let member = self.session.user_id.clone();
+                let chat_id = self.chat_id.clone().unwrap();
+                Command::perform(
+                    server_post::<()>(
+                        self.client.clone(),
+                        "leave_chat",
+                        LeaveChat {
+                            chat_id: chat_id.clone(),
+                        },
+                        Some(self.session.session_id.clone()),
+                    ),
+                    |result| match result {
+                        Ok(_) => LetterListMessage::ChatDeleted(WsLeaveChat { chat_id, member }),
+                        Err(err) => LetterListMessage::Error(err.to_string()),
+                    },
+                )
+            }
+            _ => Command::none(),
         }
     }
+
+    pub fn subscription(&self) -> iced::Subscription<LetterListMessage> {
+        ws_client::connect(self.session.session_id.clone())
+            .map(|event| LetterListMessage::WsEvent(event))
+    }
+
     pub fn view(
         &self,
         members: Vec<String>,
@@ -161,10 +228,16 @@ impl LetterList {
         };
 
         column![
-            nickname_text
-                .width(Length::Fill)
-                .vertical_alignment(alignment::Vertical::Center)
-                .horizontal_alignment(alignment::Horizontal::Center),
+            row![
+                nickname_text
+                    .width(Length::Fill)
+                    .vertical_alignment(alignment::Vertical::Center)
+                    .horizontal_alignment(alignment::Horizontal::Center),
+                button(text("").font(ICON_FONT))
+                    .padding([5, 12])
+                    .style(Button::Custom(Box::new(ChatButtonStyle::SenderMessage)))
+                    .on_press(LetterListMessage::ChatDelete)
+            ],
             scrollable(
                 column(
                     self.messages

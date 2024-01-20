@@ -19,12 +19,6 @@ pub enum LetterMessage {
 }
 
 impl Letter {
-    pub fn update(&mut self, message: LetterMessage) {
-        match message {
-            _ => {}
-        }
-    }
-
     pub fn view(
         &self,
         letter_list: &LetterList,

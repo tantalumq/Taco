@@ -32,7 +32,6 @@ pub mod requests {
     #[derive(Debug, Deserialize, Serialize)]
     pub struct LeaveChat {
         pub chat_id: String,
-        pub other_members: String,
     }
 
     #[derive(Debug, Deserialize, Serialize)]

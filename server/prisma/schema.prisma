@@ -28,7 +28,7 @@ model Chat {
 
 model Message {
   id         String    @id @default(uuid())
-  chat       Chat      @relation(fields: [chat_id], references: [id])
+  chat       Chat      @relation(fields: [chat_id], references: [id], onDelete: Cascade)
   chat_id    String
   content    String
   sender     User      @relation(fields: [user_id], references: [id])
@@ -42,6 +42,6 @@ model Message {
 model Session {
   id         String   @id @unique @default(uuid())
   expires_at DateTime
-  user       User     @relation(fields: [user_id], references: [id])
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
   user_id    String
 }

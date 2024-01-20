@@ -1,3 +1,5 @@
+use super::{chat_list::ChatList, ChatButtonStyle};
+use crate::server::get_profile_picture;
 use iced::{
     alignment,
     theme::Button,
@@ -5,10 +7,6 @@ use iced::{
     Command, Element, Length,
 };
 use structs::{DateTime, Utc};
-
-use crate::get_profile_picture;
-
-use super::{chat_list::ChatList, ChatButtonStyle};
 
 #[derive(Clone)]
 pub struct Chat {
@@ -58,7 +56,6 @@ impl Chat {
         match message {
             ChatMessage::ProfilePictureLoaded(pfp) => self.profile_picture = pfp,
             ChatMessage::OpenChat => {}
-            _ => todo!(),
         }
     }
 

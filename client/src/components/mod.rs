@@ -60,6 +60,7 @@ impl scrollable::StyleSheet for ScrollableStyle {
     type Style = Theme;
 
     fn active(&self, style: &Self::Style) -> scrollable::Scrollbar {
+        let _ = style;
         scrollable::Scrollbar {
             border_color: Color::WHITE,
             background: None,
@@ -106,5 +107,8 @@ fn style_outline(theme: &Theme) -> Appearance {
 
 pub mod chat;
 pub mod chat_list;
+pub mod header;
 pub mod letter;
 pub mod letter_list;
+pub mod login_screen;
+pub mod main_screen;
