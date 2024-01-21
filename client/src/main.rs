@@ -1,7 +1,5 @@
 use components::{
-    chat::{Chat, ChatMessage},
-    chat_list::{ChatList, ChatListMessage},
-    login_screen::{self, LoginScreen, LoginScreenMessage},
+    login_screen::{LoginScreen, LoginScreenMessage},
     main_screen::{MainScreen, MainScreenMessage},
 };
 use iced::{
@@ -10,7 +8,6 @@ use iced::{
     Application, Color, Command, Element, Font, Length, Settings,
 };
 use iced_aw::modal;
-use structs::requests::{ChatWithMembers, Session};
 
 mod components;
 mod server;

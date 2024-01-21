@@ -1,23 +1,25 @@
-use iced::{widget::container, Length};
+use iced::{widget::column, Length};
 use structs::requests::{ChatWithMembers, Session};
 
 use crate::server;
 
 use super::{
     chat::{Chat, ChatMessage},
-    chat_list::{ChatList, ChatListMessage},
+    chat_list::{ChatList, ChatListMessage}, header::{Header, HeaderMessage},
 };
 
 pub struct MainScreen {
     session: Session,
     client: reqwest::Client,
+    header: Header,
     chat_list: ChatList,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MainScreenMessage {
     ChatsLoaded(Vec<ChatWithMembers>),
-    ChatListMessage(ChatListMessage),
+    ChatList(ChatListMessage),
+    Header(HeaderMessage),
     Error(String),
 }
 
@@ -30,6 +32,10 @@ impl MainScreen {
             session: session.clone(),
             client: client.clone(),
             chat_list: ChatList::new(client.clone(), session.clone()),
+            header: Header {
+                session: session.clone(),
+                profile_picture: None,
+            },
         };
         (
             screen,
@@ -46,11 +52,11 @@ impl MainScreen {
 
     pub fn update(&mut self, message: MainScreenMessage) -> iced::Command<MainScreenMessage> {
         match message {
-            MainScreenMessage::ChatListMessage(msg) => self.chat_list.update(msg).map(|msg| {
+            MainScreenMessage::ChatList(msg) => self.chat_list.update(msg).map(|msg| {
                 if let ChatListMessage::Error(err) = msg {
                     MainScreenMessage::Error(err)
                 } else {
-                    MainScreenMessage::ChatListMessage(msg)
+                    MainScreenMessage::ChatList(msg)
                 }
             }),
             MainScreenMessage::ChatsLoaded(loaded_chats) => {
@@ -68,7 +74,7 @@ impl MainScreen {
                     .collect();
                 iced::Command::batch(chats.into_iter().map(|(cmd, chat_id)| {
                     cmd.map(move |msg| {
-                        MainScreenMessage::ChatListMessage(ChatListMessage::ChatMessage(
+                        MainScreenMessage::ChatList(ChatListMessage::ChatMessage(
                             msg,
                             chat_id.clone(),
                         ))
@@ -82,17 +88,18 @@ impl MainScreen {
     pub fn subscription(&self) -> iced::Subscription<MainScreenMessage> {
         self.chat_list
             .subscription()
-            .map(|msg| MainScreenMessage::ChatListMessage(msg))
+            .map(MainScreenMessage::ChatList)
     }
 
     pub fn view(&self) -> iced::Element<MainScreenMessage> {
-        container(
-            self.chat_list
+        column![
+            self.header.view().map(MainScreenMessage::Header),
+            self
+                .chat_list
                 .view(self.session.user_id.clone())
-                .map(MainScreenMessage::ChatListMessage),
-        )
+                .map(MainScreenMessage::ChatList),
+        ]
         .width(Length::Fill)
-        .padding(10)
         .into()
     }
 }

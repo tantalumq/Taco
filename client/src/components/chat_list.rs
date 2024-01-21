@@ -82,20 +82,24 @@ impl ChatList {
                     _ => Command::none(),
                 }
             }
-            ChatListMessage::AddChat => Command::perform(
-                server_post::<ChatWithMembers>(
-                    self.client.clone(),
-                    "create_chat",
-                    CreateChat {
-                        other_members: self.username_input.clone(),
+            ChatListMessage::AddChat => {
+                let command = Command::perform(
+                    server_post::<ChatWithMembers>(
+                        self.client.clone(),
+                        "create_chat",
+                        CreateChat {
+                            other_members: self.username_input.clone(),
+                        },
+                        Some(self.session.session_id.clone()),
+                    ),
+                    |chat| match chat {
+                        Ok(chat) => ChatListMessage::ChatAdded(chat),
+                        Err(error) => ChatListMessage::Error(error.to_string()),
                     },
-                    Some(self.session.session_id.clone()),
-                ),
-                |chat| match chat {
-                    Ok(chat) => ChatListMessage::ChatAdded(chat),
-                    Err(error) => ChatListMessage::Error(error.to_string()),
-                },
-            ),
+                );
+                self.username_input = "".into();
+                command
+            }
 
             ChatListMessage::ChatAdded(chat) => {
                 let (cmd, id) = Chat::new(
@@ -221,6 +225,7 @@ impl ChatList {
         .height(Length::Fill)
         .padding(10)
         .style(style_outline)]
+        .padding(10)
         .width(Length::Fill)
         .spacing(20);
         if let Some(opened_chat) = &self.opened_chat {
