@@ -101,13 +101,17 @@ impl MainScreen {
                 iced::Command::none()
             }
             MainScreenMessage::Settings(msg) => {
-                self.settings.as_mut().unwrap().update(msg).map(|msg| {
-                    if let SettingsMessage::Error(err) = msg {
-                        MainScreenMessage::Error(err)
-                    } else {
-                        MainScreenMessage::Settings(msg)
-                    }
-                })
+                if let Some(ref mut settings) = self.settings {
+                    settings.update(msg).map(|msg| {
+                        if let SettingsMessage::Error(err) = msg {
+                            MainScreenMessage::Error(err)
+                        } else {
+                            MainScreenMessage::Settings(msg)
+                        }
+                    })
+                } else {
+                    iced::Command::none()
+                }
             }
         }
     }
