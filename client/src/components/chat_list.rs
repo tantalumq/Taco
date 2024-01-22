@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use iced::{
-    theme::{Button, Scrollable},
-    widget::{button, column, container, row, scrollable, text_input},
+    theme::Scrollable,
+    widget::{column, container, row, scrollable, text_input},
     Command, Element, Length,
 };
 use structs::{
@@ -16,9 +16,9 @@ use crate::{server::server_get, server::server_post, ws_client::WsEvent};
 
 use super::{
     chat::{Chat, ChatMessage},
-    icon,
+    icon_button,
     letter_list::{LetterList, LetterListMessage},
-    style_outline, ChatButtonStyle, ScrollableStyle,
+    style_outline, ScrollableStyle,
 };
 
 pub struct ChatList {
@@ -208,16 +208,13 @@ impl ChatList {
                     text_input("Имя пользователя", &self.username_input)
                         .padding(8)
                         .on_input(ChatListMessage::UsernameInputChanged),
-                    button(icon(''))
-                        .padding([8, 16])
-                        .style(Button::Custom(Box::new(ChatButtonStyle::SenderMessage)))
-                        .on_press(ChatListMessage::AddChat),
+                    icon_button('').on_press(ChatListMessage::AddChat),
                 ]
                 .spacing(5),
                 scrollable(
-                    container(
-                        column(chats.into_iter().rev().map(|(chat, _)| chat).collect()).spacing(5)
-                    )
+                    container(column(
+                        chats.into_iter().rev().map(|(chat, _)| chat).collect()
+                    ))
                     .padding([0, 10, 0, 0]),
                 )
                 .style(Scrollable::Custom(Box::new(ScrollableStyle))),

@@ -76,12 +76,7 @@ async fn register(
 
     client
         .user()
-        .create(
-            info.username.clone(),
-            hash(info.password),
-            info.username.clone(),
-            vec![],
-        )
+        .create(info.username.clone(), hash(info.password), vec![])
         .exec()
         .await
         .map_err(|err| match err {
@@ -204,13 +199,14 @@ impl FromRequestParts<AppState> for Session {
     }
 }
 
-async fn log_out(State(AppState { client, .. }): State<AppState>, s: Session) {
+async fn log_out(State(AppState { client, .. }): State<AppState>, s: Session) -> Json<()> {
     client
         .session()
         .delete(prisma::session::UniqueWhereParam::IdEquals(s.session_id))
         .exec()
         .await
         .unwrap();
+    Json(())
 }
 
 pub(crate) fn router() -> Router<AppState> {

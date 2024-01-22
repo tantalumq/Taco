@@ -31,7 +31,6 @@ async fn get_user_status(
             .find_unique(user::UniqueWhereParam::IdEquals(user_id))
             .select(user::select!({
                 id
-                display_name
                 profile_picture
                 online
             }))
@@ -40,7 +39,6 @@ async fn get_user_status(
             .unwrap()
             .map(|status| UserStatus {
                 id: status.id,
-                display_name: status.display_name,
                 profile_picture: status.profile_picture,
                 online: status.online,
             }),
@@ -321,24 +319,19 @@ async fn update_profile(
     State(AppState { client, .. }): State<AppState>,
     session: Session,
     Json(update_profile): Json<UpdateProfile>,
-) {
+) -> Json<()> {
     client
         .user()
         .update(
             user::UniqueWhereParam::IdEquals(session.user_id),
-            option_vec![
-                update_profile.id.map(user::SetParam::SetId),
-                update_profile
-                    .display_name
-                    .map(user::SetParam::SetDisplayName),
-                Some(user::SetParam::SetProfilePicture(
-                    update_profile.profile_picture
-                )),
-            ],
+            vec![user::SetParam::SetProfilePicture(
+                update_profile.profile_picture,
+            )],
         )
         .exec()
         .await
         .unwrap();
+    Json(())
 }
 
 pub(crate) fn router() -> Router<AppState> {

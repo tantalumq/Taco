@@ -1,12 +1,24 @@
 use iced::{
+    alignment,
+    theme::Button,
     widget::{button, container::Appearance, scrollable, text},
     Color, Font, Theme,
 };
 
 const ICON_FONT: Font = Font::with_name("Segoe Fluent Icons");
 
-fn icon<'a, Msg>(c: char) -> impl Into<iced::Element<'a, Msg>> {
-    text(c).font(ICON_FONT).size(14)
+fn icon<'a>(c: char) -> iced::widget::Text<'a> {
+    text(c)
+        .font(ICON_FONT)
+        .width(16)
+        .horizontal_alignment(alignment::Horizontal::Center)
+        .size(15)
+}
+
+fn icon_button<'a, Msg>(c: char) -> iced::widget::Button<'a, Msg> {
+    button(icon(c))
+        .padding([8, 10])
+        .style(Button::Custom(Box::new(ChatButtonStyle::SenderMessage)))
 }
 
 fn truncate_message(message: String, length: usize) -> String {
@@ -116,4 +128,5 @@ pub mod letter;
 pub mod letter_list;
 pub mod login_screen;
 pub mod main_screen;
+pub mod settings;
 pub mod web_image;

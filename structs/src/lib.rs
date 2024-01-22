@@ -19,7 +19,6 @@ pub mod requests {
     #[derive(Debug, Deserialize, Serialize)]
     pub struct UserStatus {
         pub id: String,
-        pub display_name: String,
         pub profile_picture: Option<String>,
         pub online: bool,
     }
@@ -48,8 +47,6 @@ pub mod requests {
 
     #[derive(Debug, Deserialize, Serialize)]
     pub struct UpdateProfile {
-        pub id: Option<String>,
-        pub display_name: Option<String>,
         pub profile_picture: Option<String>,
     }
 

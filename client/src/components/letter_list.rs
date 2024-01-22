@@ -1,6 +1,6 @@
 use super::{
     chat::Chat,
-    icon,
+    icon_button,
     letter::{Letter, LetterMessage},
     ScrollableStyle,
 };
@@ -234,10 +234,7 @@ impl LetterList {
                     .width(Length::Fill)
                     .vertical_alignment(alignment::Vertical::Center)
                     .horizontal_alignment(alignment::Horizontal::Center),
-                button(icon(''))
-                    .padding([5, 12])
-                    .style(Button::Custom(Box::new(ChatButtonStyle::SenderMessage)))
-                    .on_press(LetterListMessage::ChatDelete)
+                icon_button('').on_press(LetterListMessage::ChatDelete)
             ],
             scrollable(
                 column(
@@ -265,9 +262,8 @@ impl LetterList {
                         .padding(8)
                         .on_input(|value| LetterListMessage::MessageInputChanged(value))
                         .on_submit(LetterListMessage::SendPressed),
-                    button(icon(''))
-                        .padding([8, 18])
-                        .style(Button::Custom(Box::new(ChatButtonStyle::SenderMessage)))
+                    icon_button('')
+                        .padding([8, 14])
                         .on_press(LetterListMessage::SendPressed)
                 ]
                 .spacing(8)

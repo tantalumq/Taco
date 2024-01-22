@@ -6,9 +6,11 @@ use iced::{
 use iced_aw::modal;
 
 use components::{
+    header::HeaderMessage,
     login_screen::{LoginScreen, LoginScreenMessage},
     main_screen::{MainScreen, MainScreenMessage},
 };
+use server::server_post;
 
 mod components;
 mod server;
@@ -48,6 +50,7 @@ enum AppMessage {
     FontsLoaded(Result<(), font::Error>),
     Error(String),
     CloseError,
+    LoggedOut,
 }
 
 impl Application for Taco {
@@ -91,10 +94,31 @@ impl Application for Taco {
                 self.error = None;
                 Command::none()
             }
+            AppMessage::LoggedOut => {
+                self.state = AppState::Guest(LoginScreen::new());
+                Command::none()
+            }
             _ => match self.state {
                 AppState::LoggedIn(ref mut main_screen) => {
                     if let AppMessage::MainScreen(msg) = message {
-                        main_screen.update(msg).map(AppMessage::MainScreen)
+                        match msg {
+                            MainScreenMessage::Header(HeaderMessage::LogOut) => Command::perform(
+                                server_post::<()>(
+                                    self.client.clone(),
+                                    "logout",
+                                    (),
+                                    Some(main_screen.session.session_id.clone()),
+                                ),
+                                |_| AppMessage::LoggedOut,
+                            ),
+                            _ => main_screen.update(msg).map(|msg| {
+                                if let MainScreenMessage::Error(err) = msg {
+                                    AppMessage::Error(err)
+                                } else {
+                                    AppMessage::MainScreen(msg)
+                                }
+                            }),
+                        }
                     } else {
                         Command::none()
                     }
@@ -172,6 +196,6 @@ impl Application for Taco {
     }
 
     fn scale_factor(&self) -> f64 {
-        1.0
+        1.125
     }
 }

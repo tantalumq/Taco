@@ -1,4 +1,6 @@
-use iced::{widget::column, Length};
+use iced::widget::column;
+use iced::Length;
+use iced_aw::modal;
 use structs::requests::{ChatWithMembers, Session};
 
 use crate::server;
@@ -7,12 +9,14 @@ use super::{
     chat::{Chat, ChatMessage},
     chat_list::{ChatList, ChatListMessage},
     header::{Header, HeaderMessage},
+    settings::{Settings, SettingsMessage},
 };
 
 pub struct MainScreen {
-    session: Session,
+    pub session: Session,
     header: Header,
     chat_list: ChatList,
+    settings: Option<Settings>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -21,6 +25,8 @@ pub enum MainScreenMessage {
     ChatList(ChatListMessage),
     Header(HeaderMessage),
     Error(String),
+    SettingsClosed,
+    Settings(SettingsMessage),
 }
 
 impl MainScreen {
@@ -33,6 +39,7 @@ impl MainScreen {
             session: session.clone(),
             chat_list: ChatList::new(client.clone(), session.clone()),
             header,
+            settings: None,
         };
         (
             screen,
@@ -52,6 +59,12 @@ impl MainScreen {
 
     pub fn update(&mut self, message: MainScreenMessage) -> iced::Command<MainScreenMessage> {
         match message {
+            MainScreenMessage::Header(HeaderMessage::SettingsOpen) => {
+                let (settings, load_settings_pfp) =
+                    Settings::new(self.chat_list.client.clone(), self.session.clone());
+                self.settings = Some(settings);
+                load_settings_pfp.map(MainScreenMessage::Settings)
+            }
             MainScreenMessage::Header(msg) => {
                 self.header.update(msg).map(MainScreenMessage::Header)
             }
@@ -81,7 +94,21 @@ impl MainScreen {
                     })
                 }))
             }
-            _ => iced::Command::none(),
+            MainScreenMessage::Error(_) => unreachable!(),
+            MainScreenMessage::Settings(SettingsMessage::ChangesApplied)
+            | MainScreenMessage::SettingsClosed => {
+                self.settings = None;
+                iced::Command::none()
+            }
+            MainScreenMessage::Settings(msg) => {
+                self.settings.as_mut().unwrap().update(msg).map(|msg| {
+                    if let SettingsMessage::Error(err) = msg {
+                        MainScreenMessage::Error(err)
+                    } else {
+                        MainScreenMessage::Settings(msg)
+                    }
+                })
+            }
         }
     }
 
@@ -92,13 +119,22 @@ impl MainScreen {
     }
 
     pub fn view(&self) -> iced::Element<MainScreenMessage> {
-        column![
+        let underlay = column![
             self.header.view().map(MainScreenMessage::Header),
             self.chat_list
                 .view(self.session.user_id.clone())
                 .map(MainScreenMessage::ChatList),
         ]
-        .width(Length::Fill)
+        .width(Length::Fill);
+
+        modal(
+            underlay,
+            self.settings
+                .as_ref()
+                .map(|settings| settings.view().map(MainScreenMessage::Settings)),
+        )
+        .backdrop(MainScreenMessage::SettingsClosed)
+        .on_esc(MainScreenMessage::SettingsClosed)
         .into()
     }
 }

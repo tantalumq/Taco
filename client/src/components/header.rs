@@ -1,12 +1,15 @@
 use iced::{
-    widget::{container, row, text},
+    widget::{container, row, text, Space},
     Color, Length, Theme,
 };
 use structs::requests::Session;
 
 use crate::server::get_profile_picture;
 
-use super::web_image::{WebImage, WebImageMessage};
+use super::{
+    icon_button,
+    web_image::{WebImage, WebImageMessage},
+};
 
 pub struct Header {
     pub session: Session,
@@ -17,6 +20,8 @@ pub struct Header {
 pub enum HeaderMessage {
     ProfilePicture(WebImageMessage),
     ProfilePictureLoaded(Option<String>),
+    SettingsOpen,
+    LogOut,
 }
 
 impl Header {
@@ -50,6 +55,7 @@ impl Header {
                     iced::Command::none()
                 }
             }
+            HeaderMessage::SettingsOpen | HeaderMessage::LogOut => unreachable!(),
         }
     }
 
@@ -66,9 +72,15 @@ impl Header {
             ..Default::default()
         };
         container(
-            row![pfp, text(self.session.user_id.clone()),]
-                .align_items(iced::Alignment::Center)
-                .spacing(8),
+            row![
+                pfp,
+                text(self.session.user_id.clone()),
+                Space::with_width(Length::Fill),
+                icon_button('').on_press(HeaderMessage::SettingsOpen),
+                icon_button('').on_press(HeaderMessage::LogOut)
+            ]
+            .align_items(iced::Alignment::Center)
+            .spacing(8),
         )
         .style(container_style)
         .center_y()
