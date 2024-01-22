@@ -7,7 +7,6 @@ pub struct WebImage {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WebImageMessage {
-    Error(String),
     ImageLoaded(Option<Vec<u8>>),
 }
 
@@ -39,7 +38,6 @@ impl WebImage {
                 }
                 iced::Command::none()
             }
-            WebImageMessage::Error(_) => unreachable!(),
         }
     }
 

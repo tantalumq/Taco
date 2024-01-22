@@ -4,7 +4,7 @@ use crate::server::get_profile_picture;
 use iced::{
     alignment,
     theme::Button,
-    widget::{button, column, container, image, row, text, Image},
+    widget::{button, column, container, row, text},
     Command, Element, Length,
 };
 use structs::{DateTime, Utc};

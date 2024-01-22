@@ -11,7 +11,6 @@ use super::{
 
 pub struct MainScreen {
     session: Session,
-    client: reqwest::Client,
     header: Header,
     chat_list: ChatList,
 }
@@ -29,30 +28,33 @@ impl MainScreen {
         session: Session,
         client: reqwest::Client,
     ) -> (Self, iced::Command<MainScreenMessage>) {
+        let (header, load_header_pfp) = Header::new(session.clone(), client.clone());
         let screen = Self {
             session: session.clone(),
-            client: client.clone(),
             chat_list: ChatList::new(client.clone(), session.clone()),
-            header: Header {
-                session: session.clone(),
-                profile_picture: None,
-            },
+            header,
         };
         (
             screen,
-            iced::Command::perform(
-                server::server_get::<Vec<ChatWithMembers>>(
-                    client,
-                    "chats".into(),
-                    Some(session.session_id.clone()),
+            iced::Command::batch(vec![
+                iced::Command::perform(
+                    server::server_get::<Vec<ChatWithMembers>>(
+                        client,
+                        "chats".into(),
+                        Some(session.session_id.clone()),
+                    ),
+                    move |chats| MainScreenMessage::ChatsLoaded(chats.unwrap()),
                 ),
-                move |chats| MainScreenMessage::ChatsLoaded(chats.unwrap()),
-            ),
+                load_header_pfp.map(MainScreenMessage::Header),
+            ]),
         )
     }
 
     pub fn update(&mut self, message: MainScreenMessage) -> iced::Command<MainScreenMessage> {
         match message {
+            MainScreenMessage::Header(msg) => {
+                self.header.update(msg).map(MainScreenMessage::Header)
+            }
             MainScreenMessage::ChatList(msg) => self.chat_list.update(msg).map(|msg| {
                 if let ChatListMessage::Error(err) = msg {
                     MainScreenMessage::Error(err)
