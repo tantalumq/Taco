@@ -1,7 +1,8 @@
 use super::{
     chat::Chat,
+    icon,
     letter::{Letter, LetterMessage},
-    ScrollableStyle, ICON_FONT,
+    ScrollableStyle,
 };
 use crate::{
     components::{truncate_message, ChatButtonStyle},
@@ -233,7 +234,7 @@ impl LetterList {
                     .width(Length::Fill)
                     .vertical_alignment(alignment::Vertical::Center)
                     .horizontal_alignment(alignment::Horizontal::Center),
-                button(text("").font(ICON_FONT))
+                button(icon(''))
                     .padding([5, 12])
                     .style(Button::Custom(Box::new(ChatButtonStyle::SenderMessage)))
                     .on_press(LetterListMessage::ChatDelete)
@@ -264,7 +265,7 @@ impl LetterList {
                         .padding(8)
                         .on_input(|value| LetterListMessage::MessageInputChanged(value))
                         .on_submit(LetterListMessage::SendPressed),
-                    button(text("").font(ICON_FONT))
+                    button(icon(''))
                         .padding([8, 18])
                         .style(Button::Custom(Box::new(ChatButtonStyle::SenderMessage)))
                         .on_press(LetterListMessage::SendPressed)

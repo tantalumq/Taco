@@ -1,4 +1,5 @@
 use super::{chat_list::ChatList, ChatButtonStyle};
+use crate::components::web_image::{WebImage, WebImageMessage};
 use crate::server::get_profile_picture;
 use iced::{
     alignment,
@@ -8,11 +9,10 @@ use iced::{
 };
 use structs::{DateTime, Utc};
 
-#[derive(Clone)]
 pub struct Chat {
     pub id: String,
     pub members: Vec<String>,
-    pub profile_picture: Option<String>,
+    pub profile_picture: WebImage,
     pub last_updated: DateTime<Utc>,
     pub is_open: bool,
 }
@@ -21,6 +21,7 @@ pub struct Chat {
 pub enum ChatMessage {
     OpenChat,
     ProfilePictureLoaded(Option<String>),
+    ProfilePicture(WebImageMessage),
 }
 
 impl Chat {
@@ -36,7 +37,7 @@ impl Chat {
             Self {
                 id: id.clone(),
                 members: members.clone(),
-                profile_picture: None,
+                profile_picture: WebImage::new(chat_list.client.clone()),
                 is_open: false,
                 last_updated,
             },
@@ -46,16 +47,28 @@ impl Chat {
         (
             Command::perform(
                 get_profile_picture(client, Chat::get_other_member(current_user_id, &members)),
-                |pfp| ChatMessage::ProfilePictureLoaded(pfp),
+                ChatMessage::ProfilePictureLoaded,
             ),
             id,
         )
     }
 
-    pub fn update(&mut self, message: ChatMessage) {
+    pub fn update(&mut self, message: ChatMessage) -> Command<ChatMessage> {
         match message {
-            ChatMessage::ProfilePictureLoaded(pfp) => self.profile_picture = pfp,
-            ChatMessage::OpenChat => {}
+            ChatMessage::ProfilePictureLoaded(pfp) => {
+                if let Some(pfp) = pfp {
+                    self.profile_picture
+                        .load_image(pfp)
+                        .map(ChatMessage::ProfilePicture)
+                } else {
+                    Command::none()
+                }
+            }
+            ChatMessage::ProfilePicture(msg) => self
+                .profile_picture
+                .update(msg)
+                .map(ChatMessage::ProfilePicture),
+            ChatMessage::OpenChat => unreachable!(),
         }
     }
 
@@ -77,10 +90,6 @@ impl Chat {
     pub fn view(&self, current_user_id: String) -> Element<ChatMessage> {
         let other_member = Chat::get_other_member(current_user_id, &self.members);
         let nickname = text(other_member.clone());
-        //let profile_picture = text(self.profile_picture.clone().unwrap_or(other_member));
-        let pfp = Image::<image::Handle>::new("C:/Users/thisk/bot ava.png")
-            .width(Length::Fixed(50.))
-            .height(Length::Fixed(50.));
 
         let chat_button_style = if self.is_open {
             ChatButtonStyle::Open
@@ -90,10 +99,8 @@ impl Chat {
 
         let content = button(
             row![
-                //profile_picture,
-                pfp,
-                column![nickname /* last_message */,] //.align_items(iced::Alignment::Start)
-                                                      //.spacing(15)
+                self.profile_picture.view().width(32).height(32),
+                column![nickname]
             ]
             .width(Length::Fill)
             .spacing(10)

@@ -1,13 +1,14 @@
-use components::{
-    login_screen::{LoginScreen, LoginScreenMessage},
-    main_screen::{MainScreen, MainScreenMessage},
-};
 use iced::{
     alignment, font,
     widget::{container, text},
     Application, Color, Command, Element, Font, Length, Settings,
 };
 use iced_aw::modal;
+
+use components::{
+    login_screen::{LoginScreen, LoginScreenMessage},
+    main_screen::{MainScreen, MainScreenMessage},
+};
 
 mod components;
 mod server;
@@ -44,15 +45,15 @@ enum AppState {
 enum AppMessage {
     LoginScreen(LoginScreenMessage),
     MainScreen(MainScreenMessage),
-    FontLoaded(Result<(), font::Error>),
+    FontsLoaded(Result<(), font::Error>),
     Error(String),
     CloseError,
 }
 
 impl Application for Taco {
-    type Message = AppMessage;
-
     type Executor = iced::executor::Default;
+
+    type Message = AppMessage;
 
     type Theme = iced::theme::Theme;
 
@@ -65,7 +66,11 @@ impl Application for Taco {
                 client,
                 error: None,
             },
-            font::load(include_bytes!("../fonts/inter.ttf").as_slice()).map(AppMessage::FontLoaded),
+            Command::batch(vec![
+                font::load(include_bytes!("../fonts/inter.ttf").as_slice()),
+                font::load(include_bytes!("../fonts/icons.ttf").as_slice()),
+            ])
+            .map(AppMessage::FontsLoaded),
         )
     }
 
@@ -89,9 +94,7 @@ impl Application for Taco {
             _ => match self.state {
                 AppState::LoggedIn(ref mut main_screen) => {
                     if let AppMessage::MainScreen(msg) = message {
-                        main_screen
-                            .update(msg)
-                            .map(|msg| AppMessage::MainScreen(msg))
+                        main_screen.update(msg).map(AppMessage::MainScreen)
                     } else {
                         Command::none()
                     }
@@ -102,7 +105,7 @@ impl Application for Taco {
                             LoginScreenMessage::LoggedIn(session) => {
                                 let (screen, cmd) = MainScreen::new(session, self.client.clone());
                                 self.state = AppState::LoggedIn(screen);
-                                cmd.map(|msg| AppMessage::MainScreen(msg))
+                                cmd.map(AppMessage::MainScreen)
                             }
                             _ => login_screen.update(msg).map(|msg| {
                                 if let LoginScreenMessage::Error(err) = msg {
@@ -135,10 +138,10 @@ impl Application for Taco {
         modal(
             match self.state {
                 AppState::LoggedIn(ref main_screen) => {
-                    main_screen.view().map(|msg| AppMessage::MainScreen(msg))
+                    main_screen.view().map(AppMessage::MainScreen)
                 }
                 AppState::Guest(ref login_screen) => {
-                    login_screen.view().map(|msg| AppMessage::LoginScreen(msg))
+                    login_screen.view().map(AppMessage::LoginScreen)
                 }
             },
             overlay,
@@ -159,12 +162,12 @@ impl Application for Taco {
 
     fn subscription(&self) -> iced::Subscription<Self::Message> {
         match &self.state {
-            AppState::LoggedIn(main_screen) => main_screen
-                .subscription()
-                .map(|msg| AppMessage::MainScreen(msg)),
-            AppState::Guest(login_screen) => login_screen
-                .subscription()
-                .map(|msg| AppMessage::LoginScreen(msg)),
+            AppState::LoggedIn(main_screen) => {
+                main_screen.subscription().map(AppMessage::MainScreen)
+            }
+            AppState::Guest(login_screen) => {
+                login_screen.subscription().map(AppMessage::LoginScreen)
+            }
         }
     }
 

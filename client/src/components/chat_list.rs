@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use iced::{
     theme::{Button, Scrollable},
-    widget::{button, column, container, row, scrollable, text, text_input},
+    widget::{button, column, container, row, scrollable, text_input},
     Command, Element, Length,
 };
 use structs::{
@@ -16,8 +16,9 @@ use crate::{server::server_get, server::server_post, ws_client::WsEvent};
 
 use super::{
     chat::{Chat, ChatMessage},
+    icon,
     letter_list::{LetterList, LetterListMessage},
-    style_outline, ChatButtonStyle, ScrollableStyle, ICON_FONT,
+    style_outline, ChatButtonStyle, ScrollableStyle,
 };
 
 pub struct ChatList {
@@ -31,7 +32,7 @@ pub struct ChatList {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChatListMessage {
-    ChatMessage(ChatMessage, String),
+    Chat(ChatMessage, String),
     AddChat,
     ChatAdded(ChatWithMembers),
     UsernameInputChanged(String),
@@ -54,34 +55,36 @@ impl ChatList {
 
     pub fn update(&mut self, message: ChatListMessage) -> Command<ChatListMessage> {
         match message {
-            ChatListMessage::ChatMessage(msg, chat_id) => {
-                self.chats.get_mut(&chat_id).unwrap().update(msg.clone());
-                match msg {
-                    ChatMessage::OpenChat => {
-                        if let Some(chat) = self.opened_chat.as_ref() {
-                            self.chats.get_mut(chat).unwrap().is_open = false;
-                        }
-
-                        self.opened_chat = Some(chat_id.clone());
-                        self.chats
-                            .get_mut(self.opened_chat.as_ref().unwrap())
-                            .unwrap()
-                            .is_open = true;
-
-                        self.opened_chat_messages.chat_id = Some(chat_id.clone());
-                        self.opened_chat_messages.replying_to = None;
-                        Command::perform(
-                            server_get::<Vec<WsChatMessage>>(
-                                self.client.clone(),
-                                format!("messages/{chat_id}"),
-                                Some(self.session.session_id.clone()),
-                            ),
-                            |msgs| ChatListMessage::MessagesLoaded(msgs.unwrap()),
-                        )
+            ChatListMessage::Chat(msg, chat_id) => match msg {
+                ChatMessage::OpenChat => {
+                    if let Some(chat) = self.opened_chat.as_ref() {
+                        self.chats.get_mut(chat).unwrap().is_open = false;
                     }
-                    _ => Command::none(),
+
+                    self.opened_chat = Some(chat_id.clone());
+                    self.chats
+                        .get_mut(self.opened_chat.as_ref().unwrap())
+                        .unwrap()
+                        .is_open = true;
+
+                    self.opened_chat_messages.chat_id = Some(chat_id.clone());
+                    self.opened_chat_messages.replying_to = None;
+                    Command::perform(
+                        server_get::<Vec<WsChatMessage>>(
+                            self.client.clone(),
+                            format!("messages/{chat_id}"),
+                            Some(self.session.session_id.clone()),
+                        ),
+                        |msgs| ChatListMessage::MessagesLoaded(msgs.unwrap()),
+                    )
                 }
-            }
+                msg => self
+                    .chats
+                    .get_mut(&chat_id)
+                    .unwrap()
+                    .update(msg)
+                    .map(move |msg| ChatListMessage::Chat(msg, chat_id.clone())),
+            },
             ChatListMessage::AddChat => {
                 let command = Command::perform(
                     server_post::<ChatWithMembers>(
@@ -109,7 +112,7 @@ impl ChatList {
                     chat.members,
                     chat.last_updated,
                 );
-                cmd.map(move |msg| ChatListMessage::ChatMessage(msg, id.clone()))
+                cmd.map(move |msg| ChatListMessage::Chat(msg, id.clone()))
             }
             ChatListMessage::UsernameInputChanged(user_id) => {
                 self.username_input = user_id;
@@ -191,7 +194,7 @@ impl ChatList {
                 (
                     chat.1
                         .view(current_user_id.clone())
-                        .map(|msg| ChatListMessage::ChatMessage(msg, chat.0.clone())),
+                        .map(|msg| ChatListMessage::Chat(msg, chat.0.clone())),
                     chat.1.last_updated,
                 )
             })
@@ -205,7 +208,7 @@ impl ChatList {
                     text_input("Имя пользователя", &self.username_input)
                         .padding(8)
                         .on_input(ChatListMessage::UsernameInputChanged),
-                    button(text("").font(ICON_FONT))
+                    button(icon(''))
                         .padding([8, 16])
                         .style(Button::Custom(Box::new(ChatButtonStyle::SenderMessage)))
                         .on_press(ChatListMessage::AddChat),

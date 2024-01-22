@@ -5,7 +5,8 @@ use crate::server;
 
 use super::{
     chat::{Chat, ChatMessage},
-    chat_list::{ChatList, ChatListMessage}, header::{Header, HeaderMessage},
+    chat_list::{ChatList, ChatListMessage},
+    header::{Header, HeaderMessage},
 };
 
 pub struct MainScreen {
@@ -74,10 +75,7 @@ impl MainScreen {
                     .collect();
                 iced::Command::batch(chats.into_iter().map(|(cmd, chat_id)| {
                     cmd.map(move |msg| {
-                        MainScreenMessage::ChatList(ChatListMessage::ChatMessage(
-                            msg,
-                            chat_id.clone(),
-                        ))
+                        MainScreenMessage::ChatList(ChatListMessage::Chat(msg, chat_id.clone()))
                     })
                 }))
             }
@@ -94,8 +92,7 @@ impl MainScreen {
     pub fn view(&self) -> iced::Element<MainScreenMessage> {
         column![
             self.header.view().map(MainScreenMessage::Header),
-            self
-                .chat_list
+            self.chat_list
                 .view(self.session.user_id.clone())
                 .map(MainScreenMessage::ChatList),
         ]

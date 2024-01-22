@@ -1,9 +1,13 @@
 use iced::{
-    widget::{button, container::Appearance, scrollable},
+    widget::{button, container::Appearance, scrollable, text},
     Color, Font, Theme,
 };
 
-const ICON_FONT: Font = Font::with_name("Segoe MDL2 Assets");
+const ICON_FONT: Font = Font::with_name("Segoe Fluent Icons");
+
+fn icon<'a, Msg>(c: char) -> impl Into<iced::Element<'a, Msg>> {
+    text(c).font(ICON_FONT).size(14)
+}
 
 fn truncate_message(message: String, length: usize) -> String {
     let chars = message.chars();
@@ -112,3 +116,4 @@ pub mod letter;
 pub mod letter_list;
 pub mod login_screen;
 pub mod main_screen;
+pub mod web_image;
