@@ -24,3 +24,6 @@ httparse = "1.8.0"
         "full",
     ]}
     tokio-tungstenite="0.21.0"
+
+[build-dependencies]
+winres = "0.1"
