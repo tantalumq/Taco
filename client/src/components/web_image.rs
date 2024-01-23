@@ -13,7 +13,7 @@ pub enum WebImageMessage {
 impl WebImage {
     pub fn new(client: reqwest::Client) -> Self {
         Self {
-            image: Handle::from_memory(include_bytes!("../../ava.png")),
+            image: Handle::from_memory(include_bytes!("../../default_avatar.png")),
             client,
         }
     }

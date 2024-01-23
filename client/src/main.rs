@@ -1,6 +1,9 @@
+#![windows_subsystem = "windows"]
+
 use iced::{
     alignment, font,
     widget::{container, text},
+    window::{icon, Icon},
     Application, Color, Command, Element, Font, Length, Settings,
 };
 use iced_aw::modal;
@@ -24,7 +27,7 @@ pub async fn main() -> iced::Result {
             min_size: Some((320, 240)),
             position: iced::window::Position::Default,
             transparent: true,
-            icon: None,
+            icon: Some(icon::from_file_data(include_bytes!("../icon.png"), None).unwrap()),
             ..Default::default()
         },
         default_font: Font::with_name("Inter"),
