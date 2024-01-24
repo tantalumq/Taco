@@ -7,7 +7,7 @@ use structs::requests::{Session, UpdateProfile};
 
 use crate::server::{get_profile_picture, server_post};
 
-use super::{style_outline, ChatButtonStyle};
+use super::{style_outline, ButtonStyle};
 
 pub struct Settings {
     client: reqwest::Client,
@@ -87,7 +87,7 @@ impl Settings {
                     .on_submit(SettingsMessage::ApplyChanges),
                 button("Сохранить")
                     .padding([8, 12])
-                    .style(Button::Custom(Box::new(ChatButtonStyle::SenderMessage)))
+                    .style(Button::Custom(Box::new(ButtonStyle::Blue)))
                     .on_press(SettingsMessage::ApplyChanges)
             ]
             .align_items(iced::Alignment::Center)

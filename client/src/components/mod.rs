@@ -18,7 +18,7 @@ fn icon<'a>(c: char) -> iced::widget::Text<'a> {
 fn icon_button<'a, Msg>(c: char) -> iced::widget::Button<'a, Msg> {
     button(icon(c))
         .padding([8, 10])
-        .style(Button::Custom(Box::new(ChatButtonStyle::SenderMessage)))
+        .style(Button::Custom(Box::new(ButtonStyle::Blue)))
 }
 
 fn truncate_message(message: String, length: usize) -> String {
@@ -30,37 +30,37 @@ fn truncate_message(message: String, length: usize) -> String {
     }
 }
 
-pub(crate) enum ChatButtonStyle {
-    Open,
-    Closed,
-    SenderMessage,
-    Delete,
+pub(crate) enum ButtonStyle {
+    Hover,
+    Simple,
+    Blue,
+    Red,
 }
 
-impl button::StyleSheet for ChatButtonStyle {
+impl button::StyleSheet for ButtonStyle {
     type Style = Theme;
 
     fn active(&self, style: &Theme) -> button::Appearance {
         match self {
-            ChatButtonStyle::Open => button::Appearance {
+            ButtonStyle::Hover => button::Appearance {
                 border_radius: 8.0.into(),
                 border_width: 2.0,
                 border_color: style.palette().primary,
                 background: Some(style.palette().background.into()),
                 ..button::Appearance::default()
             },
-            ChatButtonStyle::Closed => button::Appearance {
+            ButtonStyle::Simple => button::Appearance {
                 border_radius: 8.0.into(),
                 background: Some(style.palette().background.into()),
                 ..button::Appearance::default()
             },
-            ChatButtonStyle::SenderMessage => button::Appearance {
+            ButtonStyle::Blue => button::Appearance {
                 border_radius: 8.0.into(),
                 background: Some(style.palette().primary.into()),
                 text_color: Color::WHITE.into(),
                 ..button::Appearance::default()
             },
-            ChatButtonStyle::Delete => button::Appearance {
+            ButtonStyle::Red => button::Appearance {
                 border_radius: 8.0.into(),
                 background: Some(style.palette().danger.into()),
                 text_color: Color::WHITE.into(),

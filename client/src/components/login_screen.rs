@@ -7,7 +7,7 @@ use iced::{
 };
 use structs::requests::{LoginInfo, Session};
 
-use super::ChatButtonStyle;
+use super::ButtonStyle;
 
 #[derive(Default)]
 pub struct LoginScreen {
@@ -90,7 +90,7 @@ impl LoginScreen {
         let center_button = |content| {
             button(text(content).horizontal_alignment(alignment::Horizontal::Center))
                 .width(Length::Fill)
-                .style(Button::Custom(Box::new(ChatButtonStyle::SenderMessage)))
+                .style(Button::Custom(Box::new(ButtonStyle::Blue)))
                 .padding(10)
         };
 

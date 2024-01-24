@@ -7,7 +7,7 @@ use structs::{requests::WsChatMessage, DateTime, Local};
 
 use crate::components::truncate_message;
 
-use super::{icon_button, letter_list::LetterList, ChatButtonStyle};
+use super::{icon_button, letter_list::LetterList, ButtonStyle};
 
 #[derive(Clone)]
 pub struct Letter(pub WsChatMessage);
@@ -61,9 +61,9 @@ impl Letter {
         )
         .padding(10)
         .style(Button::Custom(Box::new(if nickname == current_user_id {
-            ChatButtonStyle::SenderMessage
+            ButtonStyle::Blue
         } else {
-            ChatButtonStyle::Closed
+            ButtonStyle::Simple
         })))
         .on_press(LetterMessage::ReplyStarted),]
         .align_items(iced::Alignment::Center);
@@ -74,7 +74,7 @@ impl Letter {
                         message_row.push(
                             container(
                                 icon_button('')
-                                    .style(Button::Custom(Box::new(ChatButtonStyle::Delete)))
+                                    .style(Button::Custom(Box::new(ButtonStyle::Red)))
                                     .on_press(LetterMessage::LetterDelete),
                             )
                             .center_y(),

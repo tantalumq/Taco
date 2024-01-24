@@ -5,7 +5,7 @@ use super::{
     ScrollableStyle,
 };
 use crate::{
-    components::{truncate_message, ChatButtonStyle},
+    components::{truncate_message, ButtonStyle},
     server::server_post,
     ws_client,
 };
@@ -220,7 +220,7 @@ impl LetterList {
                 Space::with_width(Length::Fill),
                 button("×")
                     .padding([0, 10])
-                    .style(Button::Custom(Box::new(ChatButtonStyle::Delete)))
+                    .style(Button::Custom(Box::new(ButtonStyle::Red)))
                     .on_press(LetterListMessage::CancelReply)
             ]
             .spacing(5)]

@@ -1,4 +1,4 @@
-use super::{chat_list::ChatList, ChatButtonStyle};
+use super::{chat_list::ChatList, ButtonStyle};
 use crate::components::web_image::{WebImage, WebImageMessage};
 use crate::server::get_profile_picture;
 use iced::{
@@ -92,9 +92,9 @@ impl Chat {
         let nickname = text(other_member.clone());
 
         let chat_button_style = if self.is_open {
-            ChatButtonStyle::Open
+            ButtonStyle::Hover
         } else {
-            ChatButtonStyle::Closed
+            ButtonStyle::Simple
         };
 
         let content = button(
