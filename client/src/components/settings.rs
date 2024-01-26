@@ -1,6 +1,6 @@
 use iced::{
     theme::Button,
-    widget::{button, column, container, text, text_input},
+    widget::{button, column, container, radio, text, text_input},
     Length,
 };
 use structs::requests::{Session, UpdateProfile};
@@ -12,7 +12,14 @@ use super::{style_outline, ButtonStyle};
 pub struct Settings {
     client: reqwest::Client,
     session: Session,
+    loadtype: LoadType,
     profile_picture: String,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum LoadType {
+    URL,
+    File,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -22,6 +29,7 @@ pub enum SettingsMessage {
     Error(String),
     ApplyChanges,
     ChangesApplied,
+    ChangeLoadType(LoadType),
 }
 
 impl Settings {
@@ -34,6 +42,7 @@ impl Settings {
             Self {
                 client: client.clone(),
                 session: session,
+                loadtype: LoadType::URL,
                 profile_picture: "".into(),
             },
             iced::Command::perform(
@@ -49,6 +58,10 @@ impl Settings {
                 if let Some(pfp) = pfp {
                     self.profile_picture = pfp;
                 }
+                iced::Command::none()
+            }
+            SettingsMessage::ChangeLoadType(loadtype) => {
+                self.loadtype = loadtype;
                 iced::Command::none()
             }
             SettingsMessage::ProfilePictureChanged(profile_picture) => {
@@ -79,12 +92,31 @@ impl Settings {
     }
 
     pub fn view(&self) -> iced::Element<SettingsMessage> {
-        container(
-            column![
-                text("Настройки").size(28),
+        let profile_picture_radio = [LoadType::URL, LoadType::File].iter().fold(
+            column![text("Select load type:")],
+            |column, loadtype| {
+                column.push(radio(
+                    format!("{loadtype:?}"),
+                    *loadtype,
+                    Some(self.loadtype),
+                    SettingsMessage::ChangeLoadType,
+                ))
+            },
+        );
+        let profile_picture_input = match self.loadtype {
+            LoadType::URL => container(
                 text_input("Фото профиля", &self.profile_picture)
                     .on_input(SettingsMessage::ProfilePictureChanged)
                     .on_submit(SettingsMessage::ApplyChanges),
+            ),
+            //native-dialog
+            LoadType::File => todo!(),
+        };
+        container(
+            column![
+                text("Настройки").size(28),
+                profile_picture_radio,
+                profile_picture_input,
                 button("Сохранить")
                     .padding([8, 12])
                     .style(Button::Custom(Box::new(ButtonStyle::Blue)))
