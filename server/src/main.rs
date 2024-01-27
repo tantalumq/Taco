@@ -18,6 +18,7 @@ mod prisma;
 mod auth;
 pub(crate) use auth::Session;
 
+mod upload;
 mod user;
 
 macro_rules! option_vec {
@@ -47,6 +48,8 @@ pub(crate) struct AppState {
 
 #[tokio::main]
 async fn main() {
+    let _ = tokio::fs::create_dir("content").await;
+
     tracing_subscriber::fmt::init();
 
     const MAX_MESSAGES: usize = 100;
@@ -56,6 +59,7 @@ async fn main() {
     let app = Router::new()
         .nest("/", auth::router())
         .nest("/", user::router())
+        .nest("/", upload::router())
         .route("/ws", get(ws_handler))
         .with_state(AppState {
             client: Arc::new(prisma::new_client().await.unwrap()),

@@ -63,8 +63,8 @@ impl Header {
         let pfp = self
             .profile_picture
             .view()
-            .width(Length::Fixed(32.))
-            .height(Length::Fixed(32.));
+            .width(Length::Fixed(50.))
+            .height(Length::Fixed(50.));
         let container_style = |_: &Theme| container::Appearance {
             border_radius: 0.0.into(),
             border_width: 1.0,
@@ -86,7 +86,7 @@ impl Header {
         .center_y()
         .padding(8)
         .width(Length::Fill)
-        .height(Length::Fixed(50.0))
+        .height(Length::Fixed(64.0))
         .into()
     }
 }

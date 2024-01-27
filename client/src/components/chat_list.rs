@@ -207,7 +207,8 @@ impl ChatList {
                 row![
                     text_input("Имя пользователя", &self.username_input)
                         .padding(8)
-                        .on_input(ChatListMessage::UsernameInputChanged),
+                        .on_input(ChatListMessage::UsernameInputChanged)
+                        .on_submit(ChatListMessage::AddChat),
                     icon_button('').on_press(ChatListMessage::AddChat),
                 ]
                 .spacing(5),

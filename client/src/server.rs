@@ -6,7 +6,7 @@ use serde::Serialize;
 use std::fmt::Display;
 use structs::requests::UserStatus;
 
-const SERVER_URL: &'static str = "http://localhost:3000";
+pub const SERVER_URL: &'static str = "http://localhost:3000";
 
 #[derive(Debug)]
 pub(crate) enum ServerRequestError {
