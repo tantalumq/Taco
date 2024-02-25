@@ -3,10 +3,15 @@ use reqwest::header::HeaderMap;
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use std::env;
 use std::fmt::Display;
 use structs::requests::UserStatus;
 
-pub const SERVER_URL: &'static str = "http://localhost:3000";
+pub fn server_url() -> String {
+    let args: Vec<String> = env::args().collect();
+    println!("{}", &args[1]);
+    args[1].clone()
+}
 
 #[derive(Debug)]
 pub(crate) enum ServerRequestError {
@@ -53,7 +58,7 @@ pub(crate) async fn server_post<T: DeserializeOwned>(
     }
 
     let response = client
-        .post(&format!("{SERVER_URL}/{route}"))
+        .post(&format!("{}/{route}", format!("http://{}", server_url())))
         .headers(headers)
         .body(
             serde_json::to_value(data)
@@ -94,7 +99,7 @@ pub(crate) async fn server_get<T: DeserializeOwned>(
     }
 
     let response = client
-        .get(&format!("{SERVER_URL}/{route}"))
+        .get(&format!("{}/{route}", format!("http://{}", server_url())))
         .headers(headers)
         .send()
         .await

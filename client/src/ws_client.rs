@@ -24,8 +24,8 @@ pub fn connect(session: String) -> Subscription<WsEvent> {
         |mut s| async {
             match &mut s {
                 State::Starting(session) => {
-                    const WS: &str = "ws://127.0.0.1:3000/ws";
-                    let mut request = WS.into_client_request().unwrap();
+                    let ws = format!("ws://{}/ws", super::server::server_url());
+                    let mut request = ws.into_client_request().unwrap();
                     request.headers_mut().insert(
                         "Authorization",
                         HeaderValue::from_str(&format!("Bearer {}", session.clone())).unwrap(),

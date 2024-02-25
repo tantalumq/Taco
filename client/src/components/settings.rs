@@ -74,7 +74,7 @@ impl Settings {
                             .unwrap();
                         let form = multipart::Form::new().part("file", part);
                         client
-                            .post(format!("{}/upload_picture", server::SERVER_URL))
+                            .post(format!("{}/upload_picture", server::server_url()))
                             .multipart(form)
                             .send()
                             .await
@@ -82,7 +82,7 @@ impl Settings {
                             .text()
                             .await
                             .ok()
-                            .map(|id| format!("{}/content/img-{}", server::SERVER_URL, &id))
+                            .map(|id| format!("{}/content/img-{}", server::server_url(), &id))
                     },
                     SettingsMessage::ProfilePictureLoaded,
                 )
