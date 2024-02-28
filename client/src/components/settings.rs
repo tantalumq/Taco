@@ -73,8 +73,12 @@ impl Settings {
                             .mime_str(&format!("image/{format}"))
                             .unwrap();
                         let form = multipart::Form::new().part("file", part);
+                        println!(
+                            "{}",
+                            format!("http://{}/content/img-", server::server_url())
+                        );
                         client
-                            .post(format!("{}/upload_picture", server::server_url()))
+                            .post(format!("http://{}/upload_picture", server::server_url()))
                             .multipart(form)
                             .send()
                             .await
@@ -82,7 +86,9 @@ impl Settings {
                             .text()
                             .await
                             .ok()
-                            .map(|id| format!("{}/content/img-{}", server::server_url(), &id))
+                            .map(|id| {
+                                format!("http://{}/content/img-{}", server::server_url(), &id)
+                            })
                     },
                     SettingsMessage::ProfilePictureLoaded,
                 )
